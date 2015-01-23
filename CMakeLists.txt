@@ -5,6 +5,10 @@ if(UNIX)
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -std=c++11 -fdiagnostics-color -g -UNDEBUG")
 endif()
 
+# where cmake extension lies
+set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/cmake)
+include(Python)
+
 # LLVM detection part
 set(LLVM_ROOT "" CACHE PATH "Root of LLVM install.")
 
@@ -30,6 +34,13 @@ include(AddLLVM)
 include_directories(${LLVM_INCLUDE_DIRS})
 link_directories(${LLVM_LIBRARY_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
+
+# generate config-dependent files
+configure_file("${CMAKE_SOURCE_DIR}/tests/lit.cfg.in" "${CMAKE_BINARY_DIR}/tests/lit.cfg")
+
+# testing part relies on lit
+find_python_module(lit REQUIRED)
+add_custom_target(check COMMAND ${PYTHON_EXECUTABLE} -m lit.main ${CMAKE_BINARY_DIR}/tests)
 
 # Finally load appropriate config from subdirs
 add_subdirectory(llvm-passes)

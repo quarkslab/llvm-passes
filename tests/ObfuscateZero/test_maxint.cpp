@@ -1,5 +1,5 @@
-// RUN: clang++ -std=c++11 -Xclang -load -Xclang ~/epona/llvm-pass/build/llvm-passes/LLVMObfuscateZero.so %s -S -emit-llvm -O2 -o %t1.ll
-// RUN: clang++ -std=c++11 -Xclang -load -Xclang ~/epona/llvm-pass/build/llvm-passes/LLVMObfuscateZero.so %s -O2 -o %t1.exe
+// RUN: clang++ -std=c++11 -Xclang -load -Xclang LLVMObfuscateZero.so %s -S -emit-llvm -O2 -o %t1.ll
+// RUN: clang++ -std=c++11 -Xclang -load -Xclang LLVMObfuscateZero.so %s -O2 -o %t1.exe
 // RUN: clang++ -std=c++11 %s -S -emit-llvm -O2 -o %t2.exe
 // RUN: test `grep -c ' ret i32 0' %t1.ll` = 0
 // RUN: test `%t1.exe` = `%t2.exe`
