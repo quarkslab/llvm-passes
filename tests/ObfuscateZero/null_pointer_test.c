@@ -1,4 +1,4 @@
-// RUN: clang -Xclang -load -Xclang ~/epona/llvm-pass/build/llvm-passes/LLVMObfuscateZero.so %s -S -emit-llvm -O0 -o %t1.ll
+// RUN: clang -Xclang -load -Xclang LLVMObfuscateZero.so %s -S -emit-llvm -O0 -o %t1.ll
 // RUN: test `grep -c ' null' %t1.ll` = 2
 
 #include <stdlib.h>
