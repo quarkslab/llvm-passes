@@ -1,0 +1,33 @@
+import os
+from  lit import formats
+from glob import glob
+
+#lit_config.load_config(config, "@CMAKE_BINARY_DIR@/tests/lit.cfg")
+
+# name: The name of this test suite.
+config.name = 'llvm-passes'
+
+# root: where test lie
+config.test_source_root = os.path.join("@CMAKE_SOURCE_DIR@", 'tests', 'ObfuscateZero')
+
+
+# Configuration file for the 'lit' test runner.
+config.test_format = formats.ShTest(True)
+
+# suffixes: A list of file extensions to treat as test files. This is overriden
+# by individual lit.local.cfg files in the test subdirectories.
+config.suffixes = ['.ll', '.c', '.cpp', '.test', '.txt', '.s', '.sh']
+
+# excludes: A list of directories to exclude from the testsuite. The 'Inputs'
+# subdirectories contain auxiliary inputs for various tests in their parent
+# directories.
+config.excludes = ['CMakeCache.txt', 'CMakeFiles', 'CMakeLists.txt']
+
+# environment: Set PATH as required
+config.environment['LLVM_ROOT'] = "@LLVM_ROOT@"
+config.environment['CMAKE_SOURCE_DIR'] = "@CMAKE_SOURCE_DIR@"
+config.environment['PATH'] = os.pathsep.join([os.path.join("@LLVM_ROOT@", "bin"),
+                                              config.environment['PATH']])
+config.environment['LD_LIBRARY_PATH'] = os.pathsep.join([os.path.join("@CMAKE_BINARY_DIR@", 'llvm-passes'), config.environment['LD_LIBRARY_PATH']])
+
+# vim:ft=python
