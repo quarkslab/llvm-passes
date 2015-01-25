@@ -1,5 +1,6 @@
 set(EPONA_LLVM_MODULES
     ObfuscateZero
+    X-OR
 )
 
 # automatically create modules based on EPONA_LLVM_MODULES and directory content
