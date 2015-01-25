@@ -8,7 +8,7 @@ from glob import glob
 config.name = 'llvm-passes'
 
 # root: where test lie
-config.test_source_root = os.path.join("@CMAKE_SOURCE_DIR@", 'tests', 'ObfuscateZero')
+config.test_source_root = os.path.join("@CMAKE_SOURCE_DIR@", 'tests', 'X-OR')
 
 
 # Configuration file for the 'lit' test runner.
