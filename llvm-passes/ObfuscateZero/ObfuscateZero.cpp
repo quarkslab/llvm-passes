@@ -52,7 +52,7 @@ public:
 
   ObfuscateZero() : BasicBlockPass(ID) {}
 
-  virtual bool runOnBasicBlock(BasicBlock &BB) override {
+  bool runOnBasicBlock(BasicBlock &BB) override {
     IntegerVect.clear();
     bool modified = false;
 
@@ -63,7 +63,7 @@ public:
          I != end; ++I) {
       Instruction &Inst = *I;
       if (isValidCandidateInstruction(Inst)) {
-        for (size_t i{0}; i < Inst.getNumOperands(); ++i) {
+        for (size_t i = 0; i < Inst.getNumOperands(); ++i) {
           if (Constant *C = isValidCandidateOperand(Inst.getOperand(i))) {
             if (Value *New_val = replaceZero(Inst, C)) {
               Inst.setOperand(i, New_val);
@@ -100,33 +100,26 @@ private:
   }
 
   Constant *isValidCandidateOperand(Value *V) {
-    if (Constant *C = dyn_cast<Constant>(V)) {
-      // Checking constant eligibility
-      if (isa<PointerType>(C->getType())) {
-        // dbgs() << "Ignoring NULL pointers\n";
-        return nullptr;
-      } else if (C->getType()->isFloatingPointTy()) {
-        // dbgs() << "Ignoring Floats 0\n";
-        return nullptr;
-      } else if (C->isNullValue()) {
-        return C;
-      } else {
-        return nullptr;
-      }
-    } else {
+    Constant *C;
+    if (!(C = dyn_cast<Constant>(V))) return nullptr;
+    if (!C->isNullValue()) return nullptr;
+    // We found a NULL constant, lets validate it
+    if(!C->getType()->isIntegerTy()) {
+      //dbgs() << "Ignoring non integer value\n";
       return nullptr;
     }
+    return C;
   }
 
   void registerInteger(Value &V) {
     if (V.getType()->isIntegerTy())
-      IntegerVect.emplace_back(&V);
+      IntegerVect.push_back(&V);
   }
 
   // Return a random prime number not equal to DifferentFrom
   // If an error occurs returns 0
   prime_type getPrime(prime_type DifferentFrom = 0) {
-      static std::uniform_int_distribution<prime_type> Rand(0, sizeof(Prime_array) / sizeof(prime_type));
+      static std::uniform_int_distribution<prime_type> Rand(0, std::extent<decltype(Prime_array)>::value - 1);
       size_t MaxLoop = 10;
       prime_type Prime;
 
@@ -155,7 +148,7 @@ private:
          *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),
                                               sizeof(prime_type) * 8);
 
-    if (IntegerVect.size() < 1) {
+    if (IntegerVect.empty()) {
       return nullptr;
     }
 
@@ -164,14 +157,13 @@ private:
 
     size_t Index1 = Rand(Generator), Index2 = Rand(Generator);
 
-    // Masking Any1 and Any2 to avoid overflow in the obsfuscation
+    // Getting the literals as LLVM objects
     Constant *any1 = ConstantInt::get(IntermediaryType, 1 + RandAny(Generator)),
              *any2 = ConstantInt::get(IntermediaryType, 1 + RandAny(Generator)),
              *prime1 = ConstantInt::get(IntermediaryType, p1),
              *prime2 = ConstantInt::get(IntermediaryType, p2),
-             // Bitmasks to prevent overflow
-        *OverflowMaskLHS = ConstantInt::get(IntermediaryType, 0x00000007),
-             *OverflowMaskRHS = ConstantInt::get(IntermediaryType, 0x00000007);
+             // Bitmask to prevent overflow
+             *OverflowMask = ConstantInt::get(IntermediaryType, 0x00000007);
 
     IRBuilder<> Builder(&Inst);
 
@@ -180,7 +172,7 @@ private:
     Value *LhsCast =
         Builder.CreateZExtOrTrunc(IntegerVect.at(Index1), IntermediaryType);
     registerInteger(*LhsCast);
-    Value *LhsAnd = Builder.CreateAnd(LhsCast, OverflowMaskLHS);
+    Value *LhsAnd = Builder.CreateAnd(LhsCast, OverflowMask);
     registerInteger(*LhsAnd);
     Value *LhsOr = Builder.CreateOr(LhsAnd, any1);
     registerInteger(*LhsOr);
@@ -193,7 +185,7 @@ private:
     Value *RhsCast =
         Builder.CreateZExtOrTrunc(IntegerVect.at(Index2), IntermediaryType);
     registerInteger(*RhsCast);
-    Value *RhsAnd = Builder.CreateAnd(RhsCast, OverflowMaskRHS);
+    Value *RhsAnd = Builder.CreateAnd(RhsCast, OverflowMask);
     registerInteger(*RhsAnd);
     Value *RhsOr = Builder.CreateOr(RhsAnd, any2);
     registerInteger(*RhsOr);
