@@ -1,31 +1,34 @@
-===============================================
-Turning Regular Code Into Attrocities With LLVM
-===============================================
+==============================================
+Turning Regular Code Into Atrocities With LLVM
+==============================================
 
 Objective
 =========
-The objective of this post is to explain the basics of LLVM bytecode obfuscation through an out-of-source build single pass.
+
+The objective of this post is to explain the basics of LLVM bytecode obfuscation through an out-of-source build single simple pass.
 *'But why obfuscate the LLVM bytecode? Why not the source code? Or the binary?'*, you may ask.
 
 Well it's because LLVM is *super swag* right now and using it is cool.
 But, regarding the engineering aspects, it is because there are lots of front-ends converting different languages into the same LLVM bytecode (Clang/Clang++ for C/C++, Mono LLVM for C#, Pyston for... Python and so on).
-Hence by working at the bytecode level we can obfuscate programs produced by many languages without even knowing them.
-Another good thing is that the obfuscation can be easily integrated with the existing compilation chain.
+Hence by working at the bytecode level we can obfuscate programs written in many languages without even knowing them.
+Another good thing is that the obfuscation can be easily integrated with the existing compilation chains: just add a few obfuscation flags.
 
 Now let's talk about what we're going to do.
 Our mission (and we have no choice but to accept it) is to obfuscate all null literals in the code.
-It means that we are going to replace (almost) all the zeroes in the code by a non-trivial boolean expression always false.
+It means that we are going to replace (almost) all the zeroes in the code by a non-trivial boolean expression, proved to be always false.
 
         prime1 * ((x | any1)**2) != prime2 * ((y | any2)**2)
 
-    - prime1 and prime2 are *distinct* prime numbers
-    - any1 and any2 are *distinct* strictly positive random numbers
-    - x and y are two variables picked from the program (they have to be reachable from the obfuscation instructions)
+Given that:
+
+    - ``prime1`` and ``prime2`` are *distinct* prime numbers
+    - ``any1`` and ``any2`` are *distinct* strictly positive random numbers
+    - ``x`` and ``y`` are two variables picked from the program (they have to be reachable from the obfuscation instructions)
 
 This expression will always return a boolean zero (false). The idea is to insert this test into our code, just before the 0 we want to obfuscate and to replace this 0 by the result of our comparison.
 As you have probably noticed we will have to pay attention to the type of the original 0 and make sure we cast the result of our expression to its type.
 
-This obfuscation may not be the most sophisticated ever written but it's enough to learn the basics of LLVM bytecode obfuscation and maybe to annoy our friends in reverse engineering for a few minutes... until they use `miasm <https://code.google.com/p/miasm/>`_...
+This obfuscation may not be the most sophisticated ever written but it's enough to learn the basics of LLVM bytecode obfuscation and maybe to annoy our friends in reverse engineering for a few minutes... until they use a nicely crafted `miasm <https://code.google.com/p/miasm/>`_ script!
 
 Requirements
 ============
@@ -38,37 +41,45 @@ Environment
 ***********
 If you want to experiment along with this tutorial (which is strongly recommended) you will need to set up an LLVM development environment.
 
-    * First let's download the LLVM sources...
-        ``>$ git clone --depth=1 --branch=release_35 https://github.com/llvm-mirror/llvm path/to/llvm/sources``
+    * First let's download the LLVM 3.5 sources::
 
-    * Now download the clang sources inside the llvm_src/tools directory.
-        ``>$ cd path/to/llvm/sources/tools && git clone --depth=1 --branch=release_35 https://github.com/llvm-mirror/clang``
+        >$ git clone --depth=1 --branch=release_35 https://github.com/llvm-mirror/llvm path/to/llvm/sources
 
-    * Create a build directory somewhere *out of the llvm source tree*:
-        ``>$ mkdir path/to/llvm/build``
+    * Now download the clang sources inside the llvm_src/tools directory::
 
-    * Let's build LLVM:
-        ``>$ cd path/to/llvm/build && cmake path/to/llvm/sources``
-        ``>$ make -j``
+        >$ cd path/to/llvm/sources/tools && git clone --depth=1 --branch=release_35 https://github.com/llvm-mirror/clang
 
-    * And... wait....
-        ``>IRL sleep 1000``
+    * Create a build directory somewhere *out of the llvm source tree*::
 
-    * (Optional) You should set your path to include the freshly baked LLVM tools and clang:
-        ``>$ export PATH=path/to/llvm/build/bin:$PATH``
+        >$ mkdir path/to/llvm/build
 
-    * (Optional) You can run the test suite to make sure that LLVM was built correctly:
-        ``>$ make check``
+    * Let's build LLVM::
 
-    * (Optional) If you want to run the existing tests you first need to install `pip <https://pypi.python.org/pypi/pip>`_ (python-pip). Then use it to install lit:
-        ``>$ pip install lit``
+        >$ cd path/to/llvm/build && cmake path/to/llvm/sources
+        >$ make -j
+
+    * And... wait...::
+
+        >IRL sleep 1000
+
+    * (Optional) You should set your path to include the freshly baked LLVM tools and clang::
+
+        >$ export PATH=path/to/llvm/build/bin:$PATH
+
+    * (Optional) You can run the test suite to make sure that LLVM was built correctly::
+        >$ make check
+
+    * (Optional) If you want to run the existing tests you first need to install `pip <https://pypi.python.org/pypi/pip>`_ (python-pip). Then use it to install lit::
+
+        >$ pip install lit``
 
 
-You have just built LLVM and clang but we are going to build the passes out of the LLVM source tree. To do so we have prepared a git repository with the basic infrastructure.
+You have just built LLVM and clang but we are going to build the passes out of the LLVM source tree. To do so we have prepared a git repository with the basic infrastructure::
 
-        ``>$ git clone https://github.com/quarkslab/llvm-passes``
+        >$ git clone https://github.com/quarkslab/llvm-passes
 
 From now on we will be working exclusively inside the ``llvm-passes`` folder (we will refer to it as ``$PASSDIR``). So let's visit our new office:
+
     * *cmake*: cmake definitions to check the Python environment. Required to generate our passes test suites.
     * *doc*: contains the sources of this tutorial, in case you find a shaming typo.
     * *llvm-passes*: contains one subdirectory per pass, and a ``CMakeList.txt`` used to generate the passes.
@@ -79,14 +90,15 @@ From now on we will be working exclusively inside the ``llvm-passes`` folder (we
 Let's obfuscate!
 ================
 
-Now that the environment is ready we will start writing our obfuscating pass. You may have noticed that there already is an ``ObfuscateZero`` dir in ``$PASSDIR/llvm-passes``.
-This is the pass we are going to reproduced step by step. So unless you want to get spoiled don't look at it yet.
+Now that the environment is ready we will start writing the obfuscating pass. You may have noticed that there already is an ``ObfuscateZero`` dir in ``$PASSDIR/llvm-passes``.
+This is the pass we are going to reproduce step by step. So unless you want to get spoiled don't look at it yet.
 
 Now we have to deal with the hardest part of LLVM pass development (and software development in general), namely finding a name for our project.
 Since I am not really inspired and ``ObfuscateZero`` is already taken, let's call our new pass *MyPass*.
 
-We need a new directory for our pass:
-    ``>$ mkdir $PASSDIR/llvm-passes/MyPass``
+We need a new directory for our pass::
+
+    >$ mkdir $PASSDIR/llvm-passes/MyPass
 
 And we will write the pass in ``$PASSDIR/llvm-passes/MyPass/MyPass.cpp``.
 
@@ -140,7 +152,7 @@ And to do so we will randomly pick two variables reachable from where the replac
 So, in order to keep the pass as simple as possible we are going to work at the basic bloc level, this way there will be no reachability problems with the variables we encounter.
 This is why our class derives from the ``BasicBlockPass`` class.
 
-This could be greatly enhanced using `dominators <http://llvm.org/docs/doxygen/html/classllvm_1_1DominatorTree.html>`_, but that's... another story!
+This could be greatly enhanced using `dominators <http://llvm.org/docs/doxygen/html/classllvm_1_1DominatorTree.html>`_ and a scan for Module scope variables, but that's... another story!
 
 .. code:: C++
 
@@ -150,7 +162,7 @@ This could be greatly enhanced using `dominators <http://llvm.org/docs/doxygen/h
 Do or do not there is no... test
 ********************************
 
-I am sure that your are eager to compile and run this empty pass. Thanks to the files provided in the Quarkslab git it's actually quite easy.
+I am sure that your are eager to compile and run this empty pass. Thanks to the files provided in the `git repo you've just cloned <https://github.com/quarkslab/llvm-passes>`_ it's actually quite easy.
 First you need to tell cmake that your pass should be compiled by adding it in the file ``$PASSDIR/llvm-passes/CMakeList.txt``.
 It should now look like this:
 
@@ -171,7 +183,7 @@ Now we are going to build the pass:
     >$ cmake -DLLVM_ROOT=path/to/your/llvm/build ..
     >$ make
 
-And now let's run our pass with clang. But we need a test file, write the following code somewhere:
+And now let's run our pass with clang. We need a test file, write the following code somewhere:
 
 .. code:: c
 
@@ -180,39 +192,43 @@ And now let's run our pass with clang. But we need a test file, write the follow
     int foo(){return 1;}
 
     int main() {
-        printf("Hello world\n");
+        puts("Hello world");
 
         return 0;
     }
 
+You can turn it into LLVM bytecode using:
 
+.. code:: bash
 
-And compile it with our awesome pass using:
+    >$ clang -S -emit-llvm path/to/test/file.c -o file.ll
+
+Or compile it with our awesome pass using:
 
 .. code:: bash
 
     >$ clang -Xclang -load -Xclang $PASSDIR/build/llvm-passes/LLVMMyPass.so path/to/test/file.c -o awesome.out
 
-Or if you already have a LLVM bytecode file and just want to apply one specific pass to it:
+Or if you just want to process the LLVM bytecode file:
 
 .. code:: bash
 
-  >$ opt -S -load $PASSDIR/build/llvm-passes/LLVMMyPass.so -MyPass path/to/test/file.ll -o out.ll
+  >$ opt -S -load $PASSDIR/build/llvm-passes/LLVMMyPass.so -MyPass path/to/test/file.ll -S -o out.ll
 
-You can also generate the LLVM bytecode:
+You can also generate the modified LLVM bytecode in a single call:
 
 .. code:: bash
 
     >$ clang -S -emit-llvm -Xclang -load -Xclang $PASSDIR/build/llvm-passes/LLVMMyPass.so path/to/test/file
 
-Since there are two blocks in our code (foo and main), we see the message "I m running on a block..." twice!
+Since there are two basic blocks in our code (one in each function, ``foo`` and ``main``), we see the message "I m running on a block..." twice!
 
-Congratulations you have compiled your first program with an LLVM pass! (You can test the executable, it should work... should)
+Congratulations you have compiled your first program with an LLVM pass! (You can test the executable, it should work... shouldn't it?)
 
 Playtime is over
 ****************
 
-The method we have to implement is ``runOnBasicBlock`` which takes as parameter a reference to the current block. We will proceed step by step.
+The method we have to implement is ``runOnBasicBlock`` which takes as parameter a reference to the current block. Let's proceed step by step.
 
 Finding null literals
 +++++++++++++++++++++
@@ -265,15 +281,15 @@ We could have iterated through the block with a foreach like:
     for(auto &I : BB) {
     }
 
-But we do not want to modify some of the special instructions located at the begining of the block (the `phi instructions <http://en.wikipedia.org/wiki/Static_single_assignment_form#Converting_out_of_SSA_form>`_), so we skip them altogether and set the iterator to the first 'normal' instruction.
+But we do not want to modify some of the special instructions located at the beginning of the block (the `phi instructions <http://en.wikipedia.org/wiki/Static_single_assignment_form#Converting_out_of_SSA_form>`_), so we skip them altogether and set the iterator to the first 'normal' instruction.
 
 The ``isValidCandidateOperand`` method checks if its parameter is a literal (constant means literal in LLVM, not variable declared ``const``).
 It also checks the type of the literal, it must not be a pointer or a floating point value (you will see later why).
 The type checks are done with the ``dyn_cast<>`` function which checks if its parameter can be cast to the type given by the template parameter.
 (``dyn_cast<>`` is used in LLVM instead of RTTI(run time type information) because it was deemed too `expensive <http://llvm.org/docs/CodingStandards.html#do-not-use-rtti-or-exceptions>`_.)
-If all those conditions are satisfied and the litteral is null we return a pointer to the operand (cast as a Constant) else ``nullptr``.
+If all those conditions are satisfied and the literal is null we return a pointer to the operand (cast as a ``Constant``) else ``nullptr``.
 
-If you compile and run the pass on our test code it finds **two** null literals when we just expected it to find the ``return 0``.
+If you compile and run the pass on our test code it finds **two** null literals when we just expected it to find the one from ``return 0``.
 
 Let's take a look at the LLVM bytecode generated by clang:
 
@@ -300,7 +316,7 @@ We get the following:
     }
 
 The two 0 that triggered the debug message from our pass are in the ``store`` and ``ret`` instructions.
-As you can see the compilation to bytecode introduced an expression not present in the source code. This will happen quite often when developing LLVM passes.
+As you can see the lowering from C to LLVM bytecode produces a slightly more verbose code.
 While debugging your future passes you will probably have to read a lot of bytecode so you should familiarize yourself with it.
 Lucky for you it's pretty easy to read (at least compared to asm) and strongly typed (this helps a lot).
 
@@ -394,7 +410,7 @@ and replace your test code by this updated version:
 
     int main() {
         int a = 2;
-        printf("Hello world\n");
+        puts("Hello world");
         a *= 3;
 
         return 0;
@@ -423,7 +439,7 @@ There are a few things that you should remember from this little modification:
     * The LLVM bytecode is in `SSA form <http://en.wikipedia.org/wiki/Static_single_assignment_form>`_, so you will see variables that you didn't explicitly declared appear in the bytecode. Typically temporary result or ``loads``.
     * A variable declaration in your code returns a **pointer** in the bytecode not an instance of the type of the variable. This is because Clang translates variable declarations into variables allocated on the stack (through the ``alloca`` instruction). A later pass (Mem2reg) takes care of putting them in registers when possible.
     * You *need* to look at the bytecode to understand what you're *actually* telling LLVM to do (at least at first :p).
-    * The return value of errs() is overloaded for most LLVM types, so use it! This is **very** useful for debug. (You can even use it on blocks, functions, ...)
+    * The return value of ``errs()`` is overloaded for most LLVM types, so use it! This is **very** useful for debug. (You can even use it on blocks, functions, ...)
 
 I will make this entire pig disappear!
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -432,6 +448,8 @@ Ok we're almost done, the only thing left is to generate the new instructions an
 For those of you who forgot (or skipped the intro) we are going to replace the null integer literals by the result of the expression:
 
         prime1 * ((x | any1)**2) != prime2 * ((y | any2)**2)
+
+Given that:
 
     - prime1 and prime2 are *distinct* prime numbers
     - any1 and any2 are *distinct* strictly positive random numbers
@@ -504,6 +522,8 @@ So we could change the result(s) produced by the code, and we want to avoid that
 To prevent overflowing we have set the maximum for Any1 and Any2 to 10, but this is not enough.
 We need to make sure that x and y are not too big. The trick is that we have no information on their value at compile time.
 The solution we chose is to apply a bitmask to x and y in order to obtain a variable of which we know the max value.
+
+The careful reader may have noticed that uniformly picking from ``IntegerVect`` is not truly uniform as we did not check for uniqueness of its elements ;-)
 
 .. code:: C++
 
@@ -682,7 +702,7 @@ and here is the code full code (with the tabulated prime numbers):
       // Return a random prime number not equal to DifferentFrom
       // If an error occurs returns 0
       prime_type getPrime(prime_type DifferentFrom = 0) {
-          static std::uniform_int_distribution<prime_type> Rand(0, sizeof(Prime_array) / sizeof(prime_type));
+          static std::uniform_int_distribution<prime_type> Rand(0, std::extend(decltype(Prime_array) - 1);
           size_t MaxLoop = 10;
           prime_type Prime;
 
@@ -771,7 +791,7 @@ and here is the code full code (with the tabulated prime numbers):
 
 DOOOOOOOOOOOOOOOOOOOOONE!
 
-Let's try this awesome pass, if we use it on the last version of our test code we get:
+Let's try this awesome pass! If we use it on the last version of our test code we get:
 
 .. code:: llvm
 
@@ -810,7 +830,7 @@ The optimizer is your enemy
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 So far we have not tried to optimize our code.
-But the compiler can optimize away some of your obfuscations and turn the code back to its original form.
+But the compiler could optimize away some of your obfuscations and turn the code back to its original form.
 Our obfuscation depends on some rather complex arithmetic properties so we are safe but you should keep in mind that the compiler might be working against you.
 
 Even though our arithmetic is optimization-proof the rest of the code is not. The optimizer can still modify your code and delete all the candidate variables for x and y. If you want to see this effect, comment out the ``puts`` call in our test code and add the -O3 flag to your compilation command.
@@ -833,7 +853,7 @@ The easiest work-around is to declare ``volatile`` the variables you don't want 
 
 You might think that not using the optimizer is a good solution but:
     * If your obfuscation can't resist an optimizer, it won't resist reverse engineers.
-    * Obfuscation often makes your program run slower, take more memory, ... So optimizing your obfuscated code might help mitigate these drawbacks.
+    * Obfuscation often makes your program run slower, take more memory... So optimizing your obfuscated code might help mitigate these drawbacks.
     * Optimization can introduce some randomness in your obfuscations which would make your obfuscation patterns harder to recognize.
 
 
@@ -929,7 +949,7 @@ We need to add a new function and add a new condition in our main loop:
 Pretty easy, no? Well the hard part is that this kind of problems is almost impossible to anticipate unless you know all the LLVM instructions.
 The only solution to find this id to run your passes on big projects, see where it crashes and find out why.
 
-Your code should now be the same as the ObfuscateZero pass.
+Your code should now be pretty close to the ``ObfuscateZero`` pass.
 And since I don't want to dump all the code on this page (again) from now on we are going to use the ObfuscateZero pass for our tests.
 
 Tests, tests and more tests
@@ -941,9 +961,9 @@ This tool runs the tests you specify with a particular syntax. Take a look in th
 
 For ObufuscateZero we have two types of tests:
     * Simple tests checking if the pass actually does what we want and doesn't crash in some tricky cases (GEP :p)
-    * The validation scripts (*.sh files). Those files download the sources from openssl and zlib, compile them with our pass and run their validation suite. If the project compiles without error *and* passes the validation suite, we can suppose that our pass doesn't introduce bugs.
+    * The validation scripts (*.sh files). Those files download the sources from openssl and zlib, compile them with our pass and run their validation suite. If the project compiles without error *and* passes its validation suite, we can suppose that our pass doesn't introduce bugs.
 
-If you have installed lit then go to ``$PASSDIR/build`` and run :
+If you have installed ``lit`` then go to ``$PASSDIR/build`` and run:
 
 .. code:: bash
 
@@ -960,3 +980,12 @@ This tutorial was just an introduction to writing LLVM passes and using them for
 There are many more funny things to do to make your code very annoying for reverse engineers.
 I hope this will help you get started.
 But remember, if you choose the quick and easy path as Vader did - you will become an agent of evil.
+
+
+Thanks
+======
+
+- Kevin Szkudlapski, for the careful proof reading
+- Mehdi Amini, for the extreme code review
+- Jeanne Marcel, the ghostly presence
+- and Serge Guelton, for the supreme coaching!
