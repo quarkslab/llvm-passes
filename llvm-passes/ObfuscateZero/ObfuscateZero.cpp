@@ -119,7 +119,7 @@ private:
   // Return a random prime number not equal to DifferentFrom
   // If an error occurs returns 0
   prime_type getPrime(prime_type DifferentFrom = 0) {
-      static std::uniform_int_distribution<prime_type> Rand(0, sizeof(Prime_array) / sizeof(prime_type));
+      static std::uniform_int_distribution<prime_type> Rand(0, std::extent<decltype(Prime_array)>::value - 1);
       size_t MaxLoop = 10;
       prime_type Prime;
 
