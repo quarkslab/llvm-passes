@@ -67,11 +67,12 @@ If you want to experiment along with this tutorial (which is strongly recommende
         >$ export PATH=path/to/llvm/build/bin:$PATH
 
     * (Optional) You can run the test suite to make sure that LLVM was built correctly::
+
         >$ make check
 
     * (Optional) If you want to run the existing tests you first need to install `pip <https://pypi.python.org/pypi/pip>`_ (python-pip). Then use it to install lit::
 
-        >$ pip install lit``
+        >$ pip install lit
 
 
 You have just built LLVM and clang but we are going to build the passes out of the LLVM source tree. To do so we have prepared a git repository with the basic infrastructure::
