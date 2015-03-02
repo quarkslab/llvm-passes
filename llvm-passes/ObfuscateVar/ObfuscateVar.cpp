@@ -1,25 +1,24 @@
 //Compile : cmake -DLLVM_ROOT=$HOME/Documents/Programmation/Obfuscation/llvm/build ..
+#include <map>
+#include <utility> //std::pair, std::make_pair
+#include <random>
+
 #include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LegacyPassManager.h"
+
 #include "llvm/Support/raw_ostream.h"
 
-#include "llvm/IR/LegacyPassManager.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
-
-#include "llvm/IR/Instructions.h"
-#include "llvm/IR/IRBuilder.h"
 
 #ifndef NDEBUG
 #include "llvm/IR/Verifier.h"
 #include "llvm/Support/Debug.h"
 #endif
-
-#include <map>
-#include <utility> //std::pair, std::make_pair
-#include <random>
-
 
 using namespace llvm;
 
