@@ -35,17 +35,16 @@ public:
 
   virtual bool runOnBasicBlock(BasicBlock &BB) override {
     /* 
-       Principe de l'obfuscation (d'après https://www.cs.ox.ac.uk/files/2936/RR-10-02.pdf):
-       Etant donné une variable X, on l'a "split" en deux variables selon
-       la formule :
+       From https://www.cs.ox.ac.uk/files/2936/RR-10-02.pdf:
+       Given a variable X, we split it such as
        - x1 = X%10
        - x2 = X//10
        
-       X=X+a sera donc transformé en :
+       X=X+a will be transform into :
        - x2 = (10*x2+x1+a)//10
        - x1 = x1+a mod 10
 
-       Pour "reconstruire" la variable : 
+       To rebuild the variable : 
        X = 10*x2+x1
 
     */
@@ -53,20 +52,44 @@ public:
     for (typename BasicBlock::iterator I = BB.getFirstInsertionPt(),end = BB.end(); I != end; ++I) {
       
       Instruction &Inst = *I;
-      if(BinaryOperator *Binop = dyn_cast<BinaryOperator>(&Inst)) {
+      if(isValidInstForSplit(Inst)) {
         
-        if(Binop->getOpcode() == Instruction::Add){
-          
-          if (isa<Constant>(Binop->getOperand(1))) {// add X,#CONSTANT
-            
-            if(Value* v = replaceAddOp(Inst)){
-              Inst.replaceAllUsesWith(v);
-            }
+          for (size_t i=0; i < Inst.getNumOperands(); ++i) {
+            if (Constant *C = isValidCandidateOperand(Inst.getOperand(i))) {
 
-          }//TODO : add X,Y for all X,Y
-        }//TODO : sub,div,mul...
+              if(!isSplited(C)){//Check if the operand is splited
+                dbgs() << *C << " isn't splitted\n";
+                //TODO : To split
+              }
+
+              
+              // if (Value *New_val = replaceZero(Inst, C)) {
+              //   Inst.setOperand(i, New_val);
+              //   modified = true;
+              // } else {
+              //   //dbgs() << "ObfuscateZero: could not rand pick a variable for replacement\n";
+              // }
+            }//isValidCandidateOperand
+          }//for
+        
           
+          // if (isa<Constant>(Binop->getOperand(1))) {// add X,#CONSTANT
+            
+          //   if(Value* v = replaceAddOp(Inst)){
+          //     Inst.replaceAllUsesWith(v);
+          //   }
+
+          // }//TODO : add X,Y for all X,Y
+        
+      
          
+      }else if(isValidInstForMerge(Inst)){
+        for (size_t i=0; i < Inst.getNumOperands(); ++i) {
+          //(merge(Inst.getOperand(i))
+          //Check if the operand is splited
+          //if yes, merge it
+          
+        }
       }else if(StoreInst *sreInst = dyn_cast<StoreInst>(&Inst)){
         if(!isa<PointerType>(sreInst->getValueOperand()->getType())){
           dbgs() << "Store Instruction: "<<*sreInst << "\n";
@@ -81,7 +104,55 @@ public:
 
 private:
 
-  // Enregistre dans une map les x1,x2 associés a une variable
+  bool isValidInstForSplit(Instruction &Inst) {
+    switch(Inst.getOpcode()){
+    case Instruction::Add:
+    case Instruction::Sub:
+      return true;
+    default:
+      return false;
+    }
+  }
+
+  bool isValidInstForMerge(Instruction &Inst) {
+    if(isa<TerminatorInst>(&Inst)) {
+      return true;
+    }else{
+      return false;
+    }
+  }
+
+  Constant *isValidCandidateOperand(Value *V) {
+
+    if(!isSplited(V)){
+      
+    if (Constant *C = dyn_cast<Constant>(V)) {
+      // Checking constant eligibility
+      if (isa<PointerType>(C->getType())) {
+        // dbgs() << "Ignoring NULL pointers\n";
+        return nullptr;
+      } else if (C->getType()->isFloatingPointTy()) {
+        // dbgs() << "Ignoring Floats 0\n";
+        return nullptr;
+      } else if (C->getType()->isIntegerTy()) {
+        return C;
+      } else {
+        return nullptr;
+      }
+    } else {
+      return nullptr;
+    }
+  
+  }else{
+    return nullptr;
+  }
+  }
+
+  bool isSplited(Value* V){
+    return false;
+  }
+
+  // We register x1,x2 in a map where the key is the variable
   // TODO : return value* and replace
   void registerVar(StoreInst &S){
     bool isVolatile = false;
@@ -102,7 +173,7 @@ private:
     //Value* valueOperand = S.getValueOperand();
     //dbgs() << "Type: " << *valueOperand->getType() << "\n\n";
 
-    // Initialise x1 et x2 avec avec la "valeur" de la variable a spliter.
+    // Initialise x1 and x2 avec avec la "valeur" de la variable a spliter.
     StoreInst *storeX1 = new StoreInst(S.getValueOperand(),alloX1,isVolatile,4);
     StoreInst *storeX2 = new StoreInst(S.getValueOperand(),alloX2,isVolatile,4);
     BB->getInstList().insert(S, storeX1); //store VAR, i32* %x1, align 4
@@ -142,7 +213,7 @@ private:
     
     Value *var = Binop->getOperand(0); //adresse de la variable
 
-    typeMap::iterator it; // Iterateur sur la map
+    typeMap::iterator it; // Iterator on the map
     
     LoadInst *load = dyn_cast<LoadInst>(&*var);
     Value* varPointer = load->getPointerOperand(); // Pointeur sur la variable de l'operande
