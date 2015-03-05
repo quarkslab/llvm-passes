@@ -9,6 +9,7 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/LegacyPassManager.h"
+#include "llvm/IR/ValueMap.h"
 
 #include "llvm/Support/raw_ostream.h"
 
@@ -25,7 +26,7 @@ using namespace llvm;
 namespace {
   typedef uint32_t typeInter;
   typedef std::pair<AllocaInst*,AllocaInst*> typeMapValue;
-  typedef std::map<Value*,typeMapValue> typeMap;
+  typedef ValueMap<Value*,typeMapValue> typeMap;
   
 class ObfuscateVar : public BasicBlockPass {
 public:
@@ -55,12 +56,16 @@ public:
       if(isValidInstForSplit(Inst)) {
         
           for (size_t i=0; i < Inst.getNumOperands(); ++i) {
-            if (Constant *C = isValidCandidateOperand(Inst.getOperand(i))) {
+            if (Value *V = isValidCandidateOperand(Inst.getOperand(i))) {
 
-              if(!isSplited(C)){//Check if the operand is splited
-                dbgs() << *C << " isn't splitted\n";
+              if(!isSplited(V)){//Check if the operand is splited
+                dbgs() << *V << " isn't splitted\n";
+                Value *VS = splitVariable(V,Inst);
+                Inst.setOperand(i, VS);
                 //TODO : To split
               }
+
+              
 
               
               // if (Value *New_val = replaceZero(Inst, C)) {
@@ -71,6 +76,14 @@ public:
               // }
             }//isValidCandidateOperand
           }//for
+
+          switch(Inst.getOpcode()){
+          case Instruction::Add:
+            dbgs() << "Split ADD instruction\n";
+            break;
+          default:
+            break;
+          }
         
           
           // if (isa<Constant>(Binop->getOperand(1))) {// add X,#CONSTANT
@@ -92,8 +105,8 @@ public:
         }
       }else if(StoreInst *sreInst = dyn_cast<StoreInst>(&Inst)){
         if(!isa<PointerType>(sreInst->getValueOperand()->getType())){
-          dbgs() << "Store Instruction: "<<*sreInst << "\n";
-          registerVar(*sreInst);
+          //dbgs() << "Store Instruction: "<<*sreInst << "\n";
+          //registerVar(*sreInst);
         }
         
       }
@@ -104,11 +117,13 @@ public:
 
 private:
 
+  
   bool isValidInstForSplit(Instruction &Inst) {
     switch(Inst.getOpcode()){
     case Instruction::Add:
     case Instruction::Sub:
       return true;
+      break;
     default:
       return false;
     }
@@ -122,36 +137,56 @@ private:
     }
   }
 
-  Constant *isValidCandidateOperand(Value *V) {
-
-    if(!isSplited(V)){
-      
-    if (Constant *C = dyn_cast<Constant>(V)) {
+  Value *isValidCandidateOperand(Value *V) {
+  
+    //if (Constant *C = dyn_cast<Constant>(V)) {
       // Checking constant eligibility
-      if (isa<PointerType>(C->getType())) {
-        // dbgs() << "Ignoring NULL pointers\n";
+      if (isa<PointerType>(V->getType())) {
+        //dbgs() << "Ignoring NULL pointers\n";
         return nullptr;
-      } else if (C->getType()->isFloatingPointTy()) {
-        // dbgs() << "Ignoring Floats 0\n";
+      } else if (V->getType()->isFloatingPointTy()) {
+        //dbgs() << "Ignoring Floats 0\n";
         return nullptr;
-      } else if (C->getType()->isIntegerTy()) {
-        return C;
+      } else if (V->getType()->isIntegerTy()) {
+        dbgs() << "Is Integer\n";
+        return V;
       } else {
         return nullptr;
       }
-    } else {
-      return nullptr;
-    }
+      //} else {
+      //dbgs() << V->getType() << "\n";
+      //return nullptr;
+      //}
   
-  }else{
-    return nullptr;
-  }
+  
   }
 
   bool isSplited(Value* V){
-    return false;
+    return varsRegister.count(V) == 1;
   }
 
+  Value* splitVariable(Value* V,Instruction &Inst){
+    bool isVolatile = false;
+    Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
+    
+    Constant *C10 = ConstantInt::get(IntermediaryType,10,false); 
+    IRBuilder<> Builder(&Inst);
+    //Instruction *C = cast<Instruction>(V);
+    
+    //dbgs() << C->getOperand() << "\n";
+    //AllocaInst *alloX1 = dyn_cast<AllocaInst>(in);
+  
+
+    Value* alloA = Builder.CreateAlloca(IntermediaryType,nullptr,"a");
+    Value* alloB = Builder.CreateAlloca(IntermediaryType,nullptr,"b");
+    //Value* X1Rem = Builder.CreateURem(C,C10);
+    Value* loadA = Builder.CreateStore(V,alloA,isVolatile);
+    Value* loadB = Builder.CreateStore(V,alloA,isVolatile);
+    //return nullptr;
+    return loadA;
+    
+    
+  }
   // We register x1,x2 in a map where the key is the variable
   // TODO : return value* and replace
   void registerVar(StoreInst &S){
