@@ -53,6 +53,7 @@ public:
     for (typename BasicBlock::iterator I = BB.getFirstInsertionPt(),end = BB.end(); I != end; ++I) {
       
       Instruction &Inst = *I;
+      bool isVolatile = false;
       if(isValidInstForSplit(Inst)) {
         
           for (size_t i=0; i < Inst.getNumOperands(); ++i) {
@@ -88,17 +89,19 @@ public:
            
             switch(Binop->getOpcode()){
             case Instruction::Add :{
+              IRBuilder<> Builder(&Inst);
               Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
     
               Constant *C10 = ConstantInt::get(IntermediaryType,10,false); 
               typeMap::iterator it=varsRegister.find(op0);
-              Value *op0_A = it->second.first;
-              Value *op0_B = it->second.second;
+              
+              Value *op0_A = Builder.CreateLoad(it->second.first,isVolatile);
+              Value *op0_B = Builder.CreateLoad(it->second.second,isVolatile);
               it=varsRegister.find(op1);
-              Value *op1_A = it->second.first;
-              Value *op1_B = it->second.second;
+              Value *op1_A = Builder.CreateLoad(it->second.first,isVolatile);
+              Value *op1_B = Builder.CreateLoad(it->second.second,isVolatile);
 
-              IRBuilder<> Builder(&Inst);
+              
               Value* AddA0A1 = Builder.CreateAdd(op0_A,op1_A);
               Value* AddB0B1 = Builder.CreateAdd(op0_B,op1_B);
               
@@ -110,11 +113,19 @@ public:
 
               Value* DivAB = Builder.CreateUDiv(AddAB,C10);
               
-              
+              Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
+              Value* alloResultB = Builder.CreateAlloca(IntermediaryType,nullptr,"b_res");
+              //Value* X1Rem = Builder.CreateURem(C,C10);
+              Value* StoreResultA = Builder.CreateStore(RemA0A1,alloResultA,isVolatile);
+              Value* StoreResultB = Builder.CreateStore(DivAB,alloResultB,isVolatile);
+              //Value* FakeInstr = Builder.CreateAdd(C10,C10);
+              Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
+              varsRegister[alloResultA] = std::make_pair(alloResultA,alloResultB);
               dbgs() << "op0 = " << *op0 << " - " << varsRegister.count(op0) <<" op1 = " << *op1 << "\n";
+              ReplaceInstWithValue(Inst.getParent()->getInstList(), I,LoadResultA);
               
               dbgs() << "Split ADD instruction\n";
-              break;
+              //break;
 
             }
             case Instruction::Sub :{break;}
@@ -132,10 +143,18 @@ public:
 
           // }//TODO : add X,Y for all X,Y
         
-      
+          //Inst.removeFromParent();
+          
+          //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,ConstantInt::get(IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8),10,false));
+          break;
          
       }else if(isValidInstForMerge(Inst)){
+        dbgs() << "Merge : " << Inst << "\n";
         for (size_t i=0; i < Inst.getNumOperands(); ++i) {
+          typeMap::iterator it;
+          Value *op = parseOperand(Inst.getOperand(i));
+           if((it=varsRegister.find(op)) == varsRegister.end()){
+           }
           //(merge(Inst.getOperand(i))
           //Check if the operand is splited
           //if yes, merge it
@@ -169,6 +188,13 @@ private:
 
   bool isValidInstForMerge(Instruction &Inst) {
     if(isa<TerminatorInst>(&Inst)) {
+      //dbgs() << "Merge : " << Inst << "\n";
+      return true;
+    }else if(isa<StoreInst>(&Inst)){
+      return true;
+    }else if(isa<LoadInst>(&Inst)){
+      return true;
+    }else if(isa<ReturnInst>(&Inst)){
       return true;
     }else{
       return false;
@@ -236,8 +262,11 @@ private:
     Value* StoreA = Builder.CreateStore(V,alloA,isVolatile);
     Value* StoreB = Builder.CreateStore(V,alloB,isVolatile);
 
-    Value* ARem = Builder.CreateURem(alloA,C10);
-    Value* BDiv = Builder.CreateUDiv(alloB,C10);
+    Value* LoadA = Builder.CreateLoad(alloA,isVolatile,"lA");
+    Value* LoadB = Builder.CreateLoad(alloB,isVolatile,"lB");
+
+    Value* ARem = Builder.CreateURem(LoadA,C10);
+    Value* BDiv = Builder.CreateUDiv(LoadB,C10);
 
     Value* StoreARem = Builder.CreateStore(ARem,alloA,isVolatile);
     Value* StoreBRem = Builder.CreateStore(BDiv,alloB,isVolatile);
