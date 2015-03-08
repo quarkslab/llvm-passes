@@ -25,7 +25,7 @@ using namespace llvm;
 
 namespace {
   typedef uint32_t typeInter;
-  typedef std::pair<AllocaInst*,AllocaInst*> typeMapValue;
+  typedef std::pair<Value*,Value*> typeMapValue;
   typedef ValueMap<Value*,typeMapValue> typeMap;
   
 class ObfuscateVar : public BasicBlockPass {
@@ -61,8 +61,9 @@ public:
               if(!isSplited(V)){//Check if the operand is splited
                 dbgs() << *V << " isn't splitted\n";
                 Value *VS = splitVariable(V,Inst);
-                Inst.setOperand(i, VS);
-                //TODO : To split
+                dbgs() << *V << " is now splited\n";
+                //Inst.setOperand(i, VS);
+                
               }
 
               
@@ -77,13 +78,50 @@ public:
             }//isValidCandidateOperand
           }//for
 
-          switch(Inst.getOpcode()){
-          case Instruction::Add:
-            dbgs() << "Split ADD instruction\n";
-            break;
-          default:
-            break;
+          if(BinaryOperator *Binop = dyn_cast<BinaryOperator>(&Inst)) {
+           Value *op0 = parseOperand(Binop->getOperand(0));
+           Value *op1 = parseOperand(Binop->getOperand(1));
+           if(!(isSplited(op0) && isSplited(op1))){
+             dbgs() << "Error : operands aren't splited !\n";
+             break;
+           }
+           
+            switch(Binop->getOpcode()){
+            case Instruction::Add :{
+              Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
+    
+              Constant *C10 = ConstantInt::get(IntermediaryType,10,false); 
+              typeMap::iterator it=varsRegister.find(op0);
+              Value *op0_A = it->second.first;
+              Value *op0_B = it->second.second;
+              it=varsRegister.find(op1);
+              Value *op1_A = it->second.first;
+              Value *op1_B = it->second.second;
+
+              IRBuilder<> Builder(&Inst);
+              Value* AddA0A1 = Builder.CreateAdd(op0_A,op1_A);
+              Value* AddB0B1 = Builder.CreateAdd(op0_B,op1_B);
+              
+              Value* RemA0A1 = Builder.CreateURem(AddA0A1,C10);
+
+              Value* MulB0B1 = Builder.CreateMul(AddB0B1,C10);
+              
+              Value* AddAB = Builder.CreateAdd(MulB0B1,AddA0A1);
+
+              Value* DivAB = Builder.CreateUDiv(AddAB,C10);
+              
+              
+              dbgs() << "op0 = " << *op0 << " - " << varsRegister.count(op0) <<" op1 = " << *op1 << "\n";
+              
+              dbgs() << "Split ADD instruction\n";
+              break;
+
+            }
+            case Instruction::Sub :{break;}
+            default: break;
           }
+          }
+          
         
           
           // if (isa<Constant>(Binop->getOperand(1))) {// add X,#CONSTANT
@@ -139,7 +177,7 @@ private:
 
   Value *isValidCandidateOperand(Value *V) {
   
-    //if (Constant *C = dyn_cast<Constant>(V)) {
+    if (Constant *C = dyn_cast<Constant>(V)) {
       // Checking constant eligibility
       if (isa<PointerType>(V->getType())) {
         //dbgs() << "Ignoring NULL pointers\n";
@@ -153,6 +191,13 @@ private:
       } else {
         return nullptr;
       }
+
+    }else if(isa<LoadInst>(V)){
+      return V;
+    }else{
+      return nullptr;
+    }
+      
       //} else {
       //dbgs() << V->getType() << "\n";
       //return nullptr;
@@ -161,6 +206,14 @@ private:
   
   }
 
+  Value* parseOperand(Value* V){
+    if(LoadInst *loadInst = dyn_cast<LoadInst>(V)){
+      return loadInst->getPointerOperand();
+    }else{
+      return V;
+    }
+        
+  }
   bool isSplited(Value* V){
     return varsRegister.count(V) == 1;
   }
@@ -180,10 +233,30 @@ private:
     Value* alloA = Builder.CreateAlloca(IntermediaryType,nullptr,"a");
     Value* alloB = Builder.CreateAlloca(IntermediaryType,nullptr,"b");
     //Value* X1Rem = Builder.CreateURem(C,C10);
-    Value* loadA = Builder.CreateStore(V,alloA,isVolatile);
-    Value* loadB = Builder.CreateStore(V,alloA,isVolatile);
+    Value* StoreA = Builder.CreateStore(V,alloA,isVolatile);
+    Value* StoreB = Builder.CreateStore(V,alloB,isVolatile);
+
+    Value* ARem = Builder.CreateURem(alloA,C10);
+    Value* BDiv = Builder.CreateUDiv(alloB,C10);
+
+    Value* StoreARem = Builder.CreateStore(ARem,alloA,isVolatile);
+    Value* StoreBRem = Builder.CreateStore(BDiv,alloB,isVolatile);
+
+    Value* mapKey = parseOperand(V); 
+    
+      //dbgs() << "CONST\n" << *V << "\n";
+      //Value* IntToPtr = Builder.CreatePtrToInt(C,IntermediaryType,"test");
+      
+    
+    dbgs() << "mapKey : " << mapKey << "\n";
+    varsRegister[mapKey] = std::make_pair(alloA,alloB);
+    //varsRegister.insert(std::pair<Value*,typeMapValue >(mapKey,std::make_pair(alloA,alloB)));
+    
+    
+
+   
     //return nullptr;
-    return loadA;
+    return nullptr;
     
     
   }
