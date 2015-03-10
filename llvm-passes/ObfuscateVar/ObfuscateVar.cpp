@@ -112,6 +112,13 @@ public:
               Value* AddAB = Builder.CreateAdd(MulB0B1,AddA0A1);
 
               Value* DivAB = Builder.CreateUDiv(AddAB,C10);
+
+
+              //Value* alloResult = Builder.CreateAlloca(IntermediaryType,nullptr,"res");
+              Value* M10AB = Builder.CreateMul(DivAB,C10);
+              Value* result = Builder.CreateAdd(M10AB,AddAB);
+
+
               
               Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
               Value* alloResultB = Builder.CreateAlloca(IntermediaryType,nullptr,"b_res");
@@ -120,9 +127,21 @@ public:
               Value* StoreResultB = Builder.CreateStore(DivAB,alloResultB,isVolatile);
               //Value* FakeInstr = Builder.CreateAdd(C10,C10);
               Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
-              varsRegister[alloResultA] = std::make_pair(alloResultA,alloResultB);
+              //varsRegister[alloResultA] = std::make_pair(alloResultA,alloResultB);
+              varsRegister[result] = std::make_pair(alloResultA,alloResultB);
               dbgs() << "op0 = " << *op0 << " - " << varsRegister.count(op0) <<" op1 = " << *op1 << "\n";
-              ReplaceInstWithValue(Inst.getParent()->getInstList(), I,LoadResultA);
+
+              // for (Value::use_iterator ui = Inst.use_begin(), e = Inst.use_end(); ui != e; ++ui){
+
+              //   if (Instruction *Inst_tmp = dyn_cast<Instruction>(*ui)) {
+              //     dbgs() << "F is used in instruction:\n";
+              //     dbgs() << *Inst_tmp << "\n";
+              //   }
+                
+              // }
+
+              
+              ReplaceInstWithValue(Inst.getParent()->getInstList(), I,result);
               
               dbgs() << "Split ADD instruction\n";
               //break;
@@ -147,9 +166,12 @@ public:
           
           //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,ConstantInt::get(IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8),10,false));
           break;
+
+          
          
       }else if(isValidInstForMerge(Inst)){
-        dbgs() << "Merge : " << Inst << "\n";
+        //dbgs() << "Merge : " << Inst << "\n";
+        
         for (size_t i=0; i < Inst.getNumOperands(); ++i) {
           typeMap::iterator it;
           Value *op = parseOperand(Inst.getOperand(i));
@@ -167,7 +189,12 @@ public:
         }
         
       }
+
+      
     }
+
+    
+    
 
     return true;
   }
