@@ -109,14 +109,15 @@ public:
 
               Value* MulB0B1 = Builder.CreateMul(AddB0B1,C10);
               
-              Value* AddAB = Builder.CreateAdd(MulB0B1,AddA0A1);
+              Value* AddAB = Builder.CreateAdd(MulB0B1,RemA0A1);
 
               Value* DivAB = Builder.CreateUDiv(AddAB,C10);
 
 
               //Value* alloResult = Builder.CreateAlloca(IntermediaryType,nullptr,"res");
               Value* M10AB = Builder.CreateMul(DivAB,C10);
-              Value* result = Builder.CreateAdd(M10AB,AddAB);
+              Value* result = Builder.CreateAdd(M10AB,RemA0A1);
+              
 
 
               
@@ -128,11 +129,13 @@ public:
               //Value* FakeInstr = Builder.CreateAdd(C10,C10);
               Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
               //varsRegister[alloResultA] = std::make_pair(alloResultA,alloResultB);
-              varsRegister[result] = std::make_pair(alloResultA,alloResultB);
+              varsRegister[LoadResultA] = std::make_pair(alloResultA,alloResultB);
               dbgs() << "op0 = " << *op0 << " - " << varsRegister.count(op0) <<" op1 = " << *op1 << "\n";
+              //ValueHandleBase::ValueIsRAUWd(&Inst,LoadResultA);
 
               // for (Value::use_iterator ui = Inst.use_begin(), e = Inst.use_end(); ui != e; ++ui){
-
+                
+              //   //dbgs() << *ui << "\n";
               //   if (Instruction *Inst_tmp = dyn_cast<Instruction>(*ui)) {
               //     dbgs() << "F is used in instruction:\n";
               //     dbgs() << *Inst_tmp << "\n";
@@ -141,14 +144,24 @@ public:
               // }
 
               
-              ReplaceInstWithValue(Inst.getParent()->getInstList(), I,result);
-              
+              //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,result);
+              //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,alloResultA);
+              //Inst.replaceAllUsesWith(LoadResultA);
+              //Inst.eraseFromParent();
+              for (User *U : Inst.users()) {
+                if (Instruction *Inst2 = dyn_cast<Instruction>(U)) {
+                  errs() << "F is used in instruction:\n";
+                  errs() << *Inst2 << "\n";
+                }
+              }
               dbgs() << "Split ADD instruction\n";
-              //break;
+              
+              break;
 
             }
             case Instruction::Sub :{break;}
             default: break;
+              
           }
           }
           
@@ -165,12 +178,12 @@ public:
           //Inst.removeFromParent();
           
           //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,ConstantInt::get(IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8),10,false));
-          break;
-
           
-         
+          //break;
+          
+      
       }else if(isValidInstForMerge(Inst)){
-        //dbgs() << "Merge : " << Inst << "\n";
+        dbgs() << "Merge : " << Inst << "\n";
         
         for (size_t i=0; i < Inst.getNumOperands(); ++i) {
           typeMap::iterator it;
@@ -182,13 +195,15 @@ public:
           //if yes, merge it
           
         }
-      }else if(StoreInst *sreInst = dyn_cast<StoreInst>(&Inst)){
-        if(!isa<PointerType>(sreInst->getValueOperand()->getType())){
-          //dbgs() << "Store Instruction: "<<*sreInst << "\n";
-          //registerVar(*sreInst);
-        }
+      }// else if(StoreInst *sreInst = dyn_cast<StoreInst>(&Inst)){
+      //   if(!isa<PointerType>(sreInst->getValueOperand()->getType())){
+      //     //dbgs() << "Store Instruction: "<<*sreInst << "\n";
+      //     //registerVar(*sreInst);
+      //   }
         
-      }
+      // }
+
+      
 
       
     }
@@ -283,8 +298,8 @@ private:
     //AllocaInst *alloX1 = dyn_cast<AllocaInst>(in);
   
 
-    Value* alloA = Builder.CreateAlloca(IntermediaryType,nullptr,"a");
-    Value* alloB = Builder.CreateAlloca(IntermediaryType,nullptr,"b");
+    Value* alloA = Builder.CreateAlloca(IntermediaryType,0,"a");
+    Value* alloB = Builder.CreateAlloca(IntermediaryType,0,"b");
     //Value* X1Rem = Builder.CreateURem(C,C10);
     Value* StoreA = Builder.CreateStore(V,alloA,isVolatile);
     Value* StoreB = Builder.CreateStore(V,alloB,isVolatile);
