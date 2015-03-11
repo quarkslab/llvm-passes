@@ -62,8 +62,7 @@ public:
               if(!isSplited(V)){//Check if the operand is splited
                 dbgs() << *V << " isn't splitted\n";
                 Value *VS = splitVariable(V,Inst);
-                dbgs() << *V << " is now splited\n";
-                //Inst.setOperand(i, VS);
+                //dbgs() << *V << " is now splited\n";
                 
               }
 
@@ -129,7 +128,7 @@ public:
               //Value* FakeInstr = Builder.CreateAdd(C10,C10);
               Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
               //varsRegister[alloResultA] = std::make_pair(alloResultA,alloResultB);
-              varsRegister[LoadResultA] = std::make_pair(alloResultA,alloResultB);
+              varsRegister[parseOperand(LoadResultA)] = std::make_pair(alloResultA,alloResultB);
               dbgs() << "op0 = " << *op0 << " - " << varsRegister.count(op0) <<" op1 = " << *op1 << "\n";
               //ValueHandleBase::ValueIsRAUWd(&Inst,LoadResultA);
 
@@ -146,14 +145,14 @@ public:
               
               //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,result);
               //ReplaceInstWithValue(Inst.getParent()->getInstList(), I,alloResultA);
-              //Inst.replaceAllUsesWith(LoadResultA);
+              Inst.replaceAllUsesWith(LoadResultA);
               //Inst.eraseFromParent();
-              for (User *U : Inst.users()) {
-                if (Instruction *Inst2 = dyn_cast<Instruction>(U)) {
-                  errs() << "F is used in instruction:\n";
-                  errs() << *Inst2 << "\n";
-                }
-              }
+              // for (User *U : Inst.users()) {
+              //   if (Instruction *Inst2 = dyn_cast<Instruction>(U)) {
+              //     errs() << "F is used in instruction:\n";
+              //     errs() << *Inst2 << "\n";
+              //   }
+              // }
               dbgs() << "Split ADD instruction\n";
               
               break;
@@ -184,12 +183,37 @@ public:
       
       }else if(isValidInstForMerge(Inst)){
         dbgs() << "Merge : " << Inst << "\n";
-        
-        for (size_t i=0; i < Inst.getNumOperands(); ++i) {
-          typeMap::iterator it;
-          Value *op = parseOperand(Inst.getOperand(i));
-           if((it=varsRegister.find(op)) == varsRegister.end()){
-           }
+        typeMap::iterator it;
+        if(isa<StoreInst>(&Inst)){
+          Value *op = parseOperand(Inst.getOperand(0));
+          if((it=varsRegister.find(op)) != varsRegister.end()){
+              dbgs() << "We should merge : " << *op << "\n";
+              Value *op_A = it->second.first;
+              Value *op_B = it->second.second;
+              dbgs() << "\t\t" << *op_A << "|" << *op_B << "\n";
+              if(Value *VReplace = mergeVariable(op,Inst)){
+                dbgs() << "VReplace = " << *VReplace << "\n";
+                Inst.setOperand(0, VReplace);
+              }
+             
+          }
+        }else{
+          
+          // for (size_t i=0; i < Inst.getNumOperands(); ++i) {
+            
+        //     Value *op = parseOperand(Inst.getOperand(i));
+        //     if((it=varsRegister.find(op)) != varsRegister.end()){
+        //       dbgs() << "We should merge : " << *op << "\n";
+        //       Value *op_A = it->second.first;
+        //       Value *op_B = it->second.second;
+        //       dbgs() << "\t\t" << *op_A << "|" << *op_B << "\n";
+        //       if(Value *VReplace = mergeVariable(op,Inst)){
+        //         dbgs() << "VReplace = " << *VReplace << "\n";
+        //         Inst.setOperand(i, VReplace);
+        //       }
+             
+        //     }
+        // }
           //(merge(Inst.getOperand(i))
           //Check if the operand is splited
           //if yes, merge it
@@ -216,6 +240,27 @@ public:
 
 private:
 
+  Value *mergeVariable(Value *Var,Instruction &Inst){
+    typeMap::iterator it;
+    Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
+    
+    Constant *C10 = ConstantInt::get(IntermediaryType,10,false);
+    Constant *C1 = ConstantInt::get(IntermediaryType,1,false);
+    if((it=varsRegister.find(Var)) != varsRegister.end()){
+      IRBuilder<> Builder(&Inst);
+      //dbgs() << "We should merge : " << *op << "\n";
+      Value *A = Builder.CreateLoad(it->second.first);
+      Value *B = Builder.CreateLoad(it->second.second);
+      Value* M10B = Builder.CreateMul(B,C10);
+      Value* res = Builder.CreateAdd(M10B,A,"add_final");//10B*A
+      return res;
+      
+       
+    }else{
+      return nullptr;
+    }
+    
+  }
   
   bool isValidInstForSplit(Instruction &Inst) {
     switch(Inst.getOpcode()){
@@ -235,7 +280,7 @@ private:
     }else if(isa<StoreInst>(&Inst)){
       return true;
     }else if(isa<LoadInst>(&Inst)){
-      return true;
+      return false;
     }else if(isa<ReturnInst>(&Inst)){
       return true;
     }else{
@@ -319,8 +364,9 @@ private:
       //Value* IntToPtr = Builder.CreatePtrToInt(C,IntermediaryType,"test");
       
     
-    dbgs() << "mapKey : " << mapKey << "\n";
+    
     varsRegister[mapKey] = std::make_pair(alloA,alloB);
+    dbgs() << "We splited : " << *mapKey << "\n";
     //varsRegister.insert(std::pair<Value*,typeMapValue >(mapKey,std::make_pair(alloA,alloB)));
     
     
