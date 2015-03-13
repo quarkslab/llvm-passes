@@ -153,25 +153,29 @@ namespace {
             }
           }
 
-        }else if(isValidInstForMerge(Inst)){
+        }else if(isValidInstForMerge(Inst)){ // We check if we can merged the instruction
           dbgs() << "Merge : " << Inst << "\n";
           typeMap::iterator it;
-          if(isa<StoreInst>(&Inst)){
-            Value *op = parseOperand(Inst.getOperand(0));
-            if((it=varsRegister.find(op)) != varsRegister.end()){
+          
+          if(isa<StoreInst>(&Inst)){ // If store instruction
+            
+            Value *op = parseOperand(Inst.getOperand(0));//Get the source
+            
+            if((it=varsRegister.find(op)) != varsRegister.end()){//Check if it's splited
               dbgs() << "We should merge : " << *op << "\n";
-              Value *op_A = it->second.first;
-              Value *op_B = it->second.second;
-              dbgs() << "\t\t" << *op_A << "|" << *op_B << "\n";
-              if(Value *VReplace = mergeVariable(op,Inst)){
+              Value *op_A = it->second.first; //Get X_A
+              Value *op_B = it->second.second; // Get X_B
+              //dbgs() << "\t\t" << *op_A << "|" << *op_B << "\n";
+              
+              if(Value *VReplace = mergeVariable(op,Inst)){//Merge the variable
                 dbgs() << "VReplace = " << *VReplace << "\n";
-                Inst.setOperand(0, VReplace);
+                Inst.setOperand(0, VReplace); //Replace it
               }
              
             }
           }else{
-            //TODO
-            //Other case ?
+            //TODO : return
+            
             
           
           }
@@ -277,7 +281,11 @@ namespace {
   
     }
 
-    
+    /*
+     * ParseOperand is used to make a "clean" key for the ValueMap
+     * For instance if the value V is "load i32* %x, align 4" it will return %x and 
+     * we will use the pointer to %x and not the pointer to load as key for the ValueMap
+     */
     Value* parseOperand(Value* V){
       if(LoadInst *loadInst = dyn_cast<LoadInst>(V)){
         return loadInst->getPointerOperand();
@@ -324,7 +332,7 @@ namespace {
       Builder.CreateStore(ARem,alloA,isVolatile);
       Builder.CreateStore(BDiv,alloB,isVolatile);
 
-      Value* mapKey = parseOperand(V); 
+      Value* mapKey = parseOperand(V); //Clean the value
 
       // Register X_A and X_B associated with V
       varsRegister[mapKey] = std::make_pair(alloA,alloB);
@@ -340,7 +348,7 @@ namespace {
     /*
      * Attributes
      */
-    typeMap varsRegister; //Adresse , (x1,x2)
+    typeMap varsRegister; //Adresse , (A,B)
     //Type *IntermediaryType = IntegerType::get(Inst.getParent()->getContext(),sizeof(typeInter)*8);//32bits
   
   };
