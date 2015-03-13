@@ -119,8 +119,8 @@ namespace {
               Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
               Value* alloResultB = Builder.CreateAlloca(IntermediaryType,nullptr,"b_res");
 
-              Value* StoreResultA = Builder.CreateStore(RemA0A1,alloResultA,isVolatile);
-              Value* StoreResultB = Builder.CreateStore(DivAB,alloResultB,isVolatile);
+              Builder.CreateStore(RemA0A1,alloResultA,isVolatile);
+              Builder.CreateStore(DivAB,alloResultB,isVolatile);
  
               Value* LoadResultA = Builder.CreateLoad(alloResultA,isVolatile);
 
@@ -163,12 +163,9 @@ namespace {
             
             if((it=varsRegister.find(op)) != varsRegister.end()){//Check if it's splited
               dbgs() << "We should merge : " << *op << "\n";
-              Value *op_A = it->second.first; //Get X_A
-              Value *op_B = it->second.second; // Get X_B
-              //dbgs() << "\t\t" << *op_A << "|" << *op_B << "\n";
               
               if(Value *VReplace = mergeVariable(op,Inst)){//Merge the variable
-                dbgs() << "VReplace = " << *VReplace << "\n";
+                //dbgs() << "VReplace = " << *VReplace << "\n";
                 Inst.setOperand(0, VReplace); //Replace it
               }
              
@@ -258,7 +255,7 @@ namespace {
      */
     Value *isValidCandidateOperand(Value *V) {
   
-      if (Constant *C = dyn_cast<Constant>(V)) {
+      if (dyn_cast<Constant>(V)) {
         
         if (isa<PointerType>(V->getType())) {
           return nullptr;
@@ -318,8 +315,8 @@ namespace {
       Value* alloB = Builder.CreateAlloca(IntermediaryType,0,"X_B");
 
       // Store V in X_A and X_B
-      Value* StoreA = Builder.CreateStore(V,alloA,isVolatile);
-      Value* StoreB = Builder.CreateStore(V,alloB,isVolatile);
+      Builder.CreateStore(V,alloA,isVolatile);
+      Builder.CreateStore(V,alloB,isVolatile);
 
       //Load the value
       Value* LoadA = Builder.CreateLoad(alloA,isVolatile);
