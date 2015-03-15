@@ -1,7 +1,7 @@
 //Compile : cmake -DLLVM_ROOT=$HOME/Documents/Programmation/Obfuscation/llvm/build ..
 #include <map>
 #include <utility> //std::pair, std::make_pair
-#include <random>
+
 
 #include "llvm/Pass.h"
 #include "llvm/IR/Function.h"
@@ -43,7 +43,7 @@ namespace {
        
          Z=X+Y will be transform into :
          - Z_A = (X_A+Y_A) mod 10
-         - Z_B = { 10*(X_B+Y_B)+[(X_A+Y_A) mod 10] } div 10
+         - Z_B = { 10*(X_B+Y_B)+(X_A+Y_A) } div 10
 
          To rebuild the variable : 
          X = 10*X_B+X_A
@@ -111,9 +111,9 @@ namespace {
 
               Value* MulB0B1 = Builder.CreateMul(AddB0B1,C10);//10*(X_B+Y_B)
               
-              Value* AddAB = Builder.CreateAdd(MulB0B1,RemA0A1);//10*(X_B+Y_B)+[X_A+Y_A mod 10]
+              Value* AddAB = Builder.CreateAdd(MulB0B1,AddA0A1);//10*(X_B+Y_B)+[X_A+Y_A]
 
-              Value* DivAB = Builder.CreateUDiv(AddAB,C10,"Z_B"); //{ 10*(X_B+Y_B)+[(X_A+Y_A) mod 10] } div 10 => Z_B
+              Value* DivAB = Builder.CreateUDiv(AddAB,C10,"Z_B"); //{ 10*(X_B+Y_B)+[X_A+Y_A] } div 10 => Z_B
 
               //Allocate two register to store the splited result
               Value* alloResultA = Builder.CreateAlloca(IntermediaryType,nullptr,"a_res");
