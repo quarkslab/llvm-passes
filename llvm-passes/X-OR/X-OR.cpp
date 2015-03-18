@@ -6,7 +6,6 @@
 #include "llvm/IR/IRBuilder.h"
 
 #include "llvm/IR/LegacyPassManager.h"
-#include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 
 #ifndef NDEBUG
@@ -14,34 +13,25 @@
 #endif
 #include "llvm/Support/Debug.h"
 
-#include <cassert>
-#include <set>
-#include <list>
 #include <numeric>
 #include <tuple>
 #include <map>
-#include <unordered_map>
 #include <cmath>
 #include <algorithm>
+
+#include "../PropagatedTransformation/PropagatedTransformation.hpp"
 
 using namespace llvm;
 
 namespace {
+class X_OR : protected PropagatedTransformation::PropagatedTransformation,
+             public BasicBlockPass {
 
-class X_OR : public BasicBlockPass {
-
-    const unsigned MaxSupportedSize = 128;
-    std::default_random_engine Generator;
-
-    typedef std::unordered_map<Instruction *, std::set<Instruction *>> Tree_t;
-
-    std::list<Tree_t> Forest;
-    std::unordered_map<Instruction *, std::reference_wrapper<Tree_t>> TreeMap;
-
-    std::map<std::pair<Value *, unsigned>, Value *> TransfoRegister;
     typedef std::map<std::pair<unsigned, unsigned>, std::map<unsigned, APInt>>
         ExponentMaps_t;
     ExponentMaps_t ExponentMaps;
+
+    Type *OriginalType;
 
   public:
     static char ID;
@@ -51,34 +41,25 @@ class X_OR : public BasicBlockPass {
     virtual bool runOnBasicBlock(BasicBlock &BB) {
         bool modified = false;
 
-        TreeMap.clear();
-        Forest.clear();
-        TransfoRegister.clear();
+        populateForest(BB);
 
-        for (typename BasicBlock::iterator I = BB.getFirstInsertionPt(),
-                                           end = BB.end();
-             I != end; ++I) {
-            Instruction *Inst = &*I;
-            if (isEligibleInstruction(Inst)) {
-                Forest.emplace_back();
-                walkInstructions(Forest.back(), Inst);
-            }
-        }
-
-        for (auto &T : Forest) {
-            auto Roots = getRoots(T);
-            const unsigned NewBase = chooseTreeBase(T, Roots);
+        for (auto const &T : Forest) {
+            auto Roots = T.roots();
+            // Choosing NewBase
+            SizeParam = chooseTreeBase(T, Roots);
             // If there was no valid base available:
-            if (NewBase < 3) {
-                dbgs() << "X_OR: Couldn't pick base.\n";
+            if (SizeParam < 3) {
+                dbgs() << "X-OR: Couldn't pick base.\n";
                 continue;
             }
 
+            OriginalType = T.begin()->first->getType();
+
             for (auto Root : Roots) {
-                if (RecursiveTransform(Root, T, NewBase, BB))
+                if (RecursiveTransform(Root, T, BB))
                     modified = true;
                 else {
-                    dbgs() << "X_OR: Obfiscation failed.\n";
+                    dbgs() << "X_OR: Obfuscation failed.\n";
                     break;
                 }
             }
@@ -90,152 +71,44 @@ class X_OR : public BasicBlockPass {
     }
 
   private:
-    // Returns roots of given tree
-    Tree_t::mapped_type getRoots(Tree_t &T) {
-        Tree_t::mapped_type Roots;
-        std::transform(
-            T.begin(), T.end(), std::inserter(Roots, Roots.begin()),
-            [&Roots](Tree_t::value_type const &It) { return It.first; });
-        for (auto const &Node : T)
-            for (auto const &Successors : Node.second)
-                Roots.erase(Successors);
-        return Roots;
-    }
+    // FIXME: capping at 128 bits because of APInt multiplication bug:
+    // https://llvm.org/bugs/show_bug.cgi?id=19797
+    const unsigned MaxSupportedSize = 128;
+    std::default_random_engine Generator;
 
-    Value *RecursiveTransform(Instruction *Inst, Tree_t const &T,
-                              unsigned NewBase, BasicBlock const &CurrentBB) {
-        assert(Inst);
-        IRBuilder<> Builder(Inst);
+    std::map<std::pair<unsigned, unsigned>, std::map<unsigned, APInt>>
+        ExponentMap;
 
-        Value *Operand1 = Inst->getOperand(0), *Operand2 = Inst->getOperand(1);
-
-        Value *NewOperand1 = nullptr, *NewOperand2 = nullptr;
-
-        auto const &Successors = T.at(Inst);
-
-        Instruction *IOperand1 = dyn_cast<Instruction>(Operand1),
-                    *IOperand2 = dyn_cast<Instruction>(Operand2);
-
-        // If Operand1 is not a node (i.e not a xor)
-        if (not IOperand1 or IOperand1->getParent() != &CurrentBB or
-            Successors.find(IOperand1) == Successors.cend())
-            NewOperand1 = findOrTransformOperand(Operand1, NewBase, Builder);
-        else
-            NewOperand1 = RecursiveTransform(IOperand1, T, NewBase, CurrentBB);
-
-        // Idem for Operand2
-        if (not IOperand2 or IOperand2->getParent() != &CurrentBB or
-            Successors.find(IOperand2) == Successors.cend())
-            NewOperand2 = findOrTransformOperand(Operand2, NewBase, Builder);
-        else
-            NewOperand2 = RecursiveTransform(IOperand2, T, NewBase, CurrentBB);
-
-        if (not NewOperand1 or not NewOperand2)
-            return nullptr;
-
-        Value *NewValue = Builder.CreateAdd(NewOperand1, NewOperand2);
-
-        if (not NewValue)
-            return nullptr;
-
-        TransfoRegister.emplace(std::make_pair(Inst, NewBase), NewValue);
-
-        // Preparing the result in base 2 for later use
-        // Should be optimized out if we don't use it.
-        Value *InvertResult =
-            rewriteAsBase2(NewValue, NewBase, Inst->getType(), Builder);
-
-        if (not InvertResult)
-            return nullptr;
-
-        for (auto const &NVUse : Inst->uses()) {
-            Instruction *UseInst = dyn_cast<Instruction>(NVUse.getUser());
-            if (not UseInst or T.find(UseInst) != T.cend())
-                continue;
-
-            for (unsigned I = 0; I < UseInst->getNumOperands(); ++I) {
-                if (UseInst->getOperand(I) == (Value *)Inst) {
-                    UseInst->setOperand(I, InvertResult);
-                }
-            }
-        }
-
-        return NewValue;
-    }
-
-    // Checking if we've already transformed the operand or transform it
-    Value *findOrTransformOperand(Value *Operand, unsigned SizeParam,
-                                  IRBuilder<> &Builder) {
-        auto Pos = TransfoRegister.find(std::make_pair(Operand, SizeParam));
-        if (Pos == TransfoRegister.end()) {
-            Value *NewOperand = rewriteAsBaseN(Operand, SizeParam, Builder);
-            if (not NewOperand) {
-                dbgs() << "X_OR: Obfuscation failed.\n";
-                return nullptr;
-            }
-            TransfoRegister.emplace(std::make_pair(Operand, SizeParam),
-                                    NewOperand);
-            return TransfoRegister.at(std::make_pair(Operand, SizeParam));
-        }
-        return Pos->second;
-    }
-
-    BinaryOperator *isEligibleInstruction(Instruction *Inst) {
+    BinaryOperator *isEligibleInstruction(Instruction *Inst) const override {
         BinaryOperator *Op = dyn_cast<BinaryOperator>(Inst);
-        if (Op and Op->getOpcode() == Instruction::BinaryOps::Xor)
+        if (not Op)
+            return nullptr;
+        if (Op->getOpcode() == Instruction::BinaryOps::Xor)
             return Op;
         return nullptr;
     }
 
-    // Building the adjacency list representing the dependencies
-    // between XORs
-    void walkInstructions(Tree_t &T, Instruction *Inst) {
-        if (not isEligibleInstruction(Inst))
-            return;
-        // Look for the Inst in the TreeMap
-        auto Pos = TreeMap.find(Inst);
-        if (Pos == TreeMap.end()) {
-            T.emplace(Inst, Tree_t::mapped_type());
-            for (auto const &Op : Inst->operands()) {
-                Instruction *OperandInst = dyn_cast<Instruction>(&Op);
-                if (OperandInst and isEligibleInstruction(OperandInst))
-                    T.at(Inst).insert(OperandInst);
-            }
-            TreeMap.emplace(Inst, T);
-            for (auto const &NVUse : Inst->uses()) {
-                Instruction *UseInst = dyn_cast<Instruction>(NVUse.getUser());
-                if (not UseInst)
-                    continue;
-                walkInstructions(T, UseInst);
-            }
-        } else {
-            Tree_t &OlderTree = Pos->second.get();
-            if (&OlderTree != &T) {
-                // Merge trees
-                for (auto It : OlderTree) {
-                    T[It.first].insert(OlderTree[It.first].begin(),
-                                       OlderTree[It.first].end());
-                    // Redirecting TreeMap refs
-                    TreeMap.at(It.first) = T;
-                }
-                Forest.remove_if(
-                    [&OlderTree](Tree_t const &T) { return &T == &OlderTree; });
-            }
-        }
+    std::vector<Value *>
+    applyNewOperation(std::vector<Value *> const &Operands1,
+                      std::vector<Value *> const &Operands2, Instruction *,
+                      IRBuilder<> &Builder) override {
+        assert(not Operands1.empty() and not Operands2.empty());
+
+        return std::vector<Value *>{
+            Builder.CreateAdd(Operands1[0], Operands2[0])};
     }
 
-    std::vector<unsigned> getShuffledRange(unsigned UpTo) {
-        std::vector<unsigned> Range(UpTo);
-        std::iota(Range.begin(), Range.end(), 0u);
-        std::random_shuffle(Range.begin(), Range.end());
-        return Range;
-    }
+    std::vector<Value *> transformOperand(Value *Operand,
+                                          IRBuilder<> &Builder) override {
+        if (!Operand->getType()->isIntegerTy())
+            return std::vector<Value *>();
 
-    Value *rewriteAsBaseN(Value *Operand, unsigned Base, IRBuilder<> &Builder) {
         const unsigned OriginalNbBit = Operand->getType()->getIntegerBitWidth(),
+                       Base = SizeParam,
                        NewNbBit = requiredBits(OriginalNbBit, Base);
+
         if (not NewNbBit) {
-            return nullptr;
+            return std::vector<Value *>();
         }
 
         Type *NewBaseType = IntegerType::get(Operand->getContext(), NewNbBit);
@@ -259,15 +132,18 @@ class X_OR : public BasicBlockPass {
             Value *NewBit = Builder.CreateMul(BitValue, Expo);
             Accu = Builder.CreateAdd(Accu, NewBit);
         }
-
-        return Accu;
+        return std::vector<Value *>{Accu};
     }
 
-    Value *rewriteAsBase2(Value *Operand, unsigned Base, Type *OriginalType,
-                          IRBuilder<> &Builder) {
+    Value *transformBackOperand(std::vector<Value *> const &Operands,
+                                IRBuilder<> &Builder) override {
+        assert(Operands.size() && "No instructions provided.");
+        Value *Operand = Operands[0];
+
         Type *ObfuscatedType = Operand->getType();
 
-        const unsigned OriginalNbBit = OriginalType->getIntegerBitWidth();
+        const unsigned OriginalNbBit = OriginalType->getIntegerBitWidth(),
+                       Base = SizeParam;
 
         // Initializing variables
         Value *IR2 = ConstantInt::get(ObfuscatedType, 2u),
@@ -288,30 +164,31 @@ class X_OR : public BasicBlockPass {
             Accu = Builder.CreateOr(Accu, ShiftedBit);
         }
         // Cast back to original type
-        return Builder.CreateZExtOrTrunc(Accu, OriginalType);
+        return Builder.CreateTrunc(Accu, OriginalType);
     }
 
     unsigned chooseTreeBase(Tree_t const &T, Tree_t::mapped_type const &Roots) {
-        assert(T.size());
+        assert(T.size() && "Can't process an empty tree.");
         unsigned Max = maxBase(
-                     (*(T.begin())).first->getType()->getIntegerBitWidth()),
-                 Min = 0;
+                     T.begin()->first->getType()->getIntegerBitWidth()),
+                 MinEligibleBase = 0;
 
         // Computing minimum base
         // Each node of the tree has a base equal to the sum of its two
-        // successors' mins
+        // successors' min base
         std::map<Value *, unsigned> NodeBaseMap;
         for (auto const &Root : Roots)
-            Min = std::max(recursiveTreeClimb(Root, T, NodeBaseMap), Min);
+            MinEligibleBase = std::max(minimalBase(Root, T, NodeBaseMap), MinEligibleBase);
 
-        if (++Min < 3 or Min > Max)
+        ++MinEligibleBase;
+        if (MinEligibleBase < 3 or MinEligibleBase > Max)
             return 0;
-        std::uniform_int_distribution<unsigned> Rand(Min, Max);
+        std::uniform_int_distribution<unsigned> Rand(MinEligibleBase, Max);
         return Rand(Generator);
     }
 
-    unsigned recursiveTreeClimb(Value *Node, Tree_t const &T,
-                                std::map<Value *, unsigned> &NodeBaseMap) {
+    unsigned minimalBase(Value *Node, Tree_t const &T,
+                         std::map<Value *, unsigned> &NodeBaseMap) {
         // Emplace new value and check if already passed this node
         if (NodeBaseMap[Node] != 0)
             return NodeBaseMap.at(Node);
@@ -325,7 +202,7 @@ class X_OR : public BasicBlockPass {
             unsigned sum = 0;
             for (auto const &Operand : Inst->operands()) {
                 if (NodeBaseMap[Operand] == 0)
-                    recursiveTreeClimb(Operand, T, NodeBaseMap);
+                    minimalBase(Operand, T, NodeBaseMap);
                 sum += NodeBaseMap.at(Operand);
             }
             // Compute this node's min base
@@ -337,7 +214,7 @@ class X_OR : public BasicBlockPass {
     // Returns the max supported base for the given OriginalNbBit
     // 31 is the max base to avoid overflow 2**sizeof(unsigned) in requiredBits
     unsigned maxBase(unsigned OriginalNbBit) {
-        assert(OriginalNbBit);
+        assert(OriginalNbBit && "Bisize must be > 1");
         const unsigned MaxSupportedBase = sizeof(unsigned) * 8 - 1;
         if (OriginalNbBit >= MaxSupportedSize)
             return 0;
@@ -385,11 +262,11 @@ class X_OR : public BasicBlockPass {
 }
 
 char X_OR::ID = 0;
-static RegisterPass<X_OR> X("X_OR", "Obfuscates XOR", false, false);
+static RegisterPass<X_OR> X("X-OR", "Obfuscates XORs", false, false);
 
 // register pass for clang use
 static void registerX_ORPass(const PassManagerBuilder &, PassManagerBase &PM) {
     PM.add(new X_OR());
 }
 static RegisterStandardPasses
-    RegisterMBAPass(PassManagerBuilder::EP_EarlyAsPossible, registerX_ORPass);
+    RegisterX_ORPass(PassManagerBuilder::EP_EarlyAsPossible, registerX_ORPass);
