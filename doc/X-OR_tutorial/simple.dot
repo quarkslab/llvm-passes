@@ -1,0 +1,16 @@
+digraph simple_graph {
+  n1 [label="%1 = load volatile i32* %a", shape=box];
+  n2 [label="%2 = xor i32 %1, -1"];
+  n3 [label="%3 = load volatile i32* %c", shape=box];
+  n4 [label="%4 = xor i32 %3, %2"];
+  n5 [label="%5 = load volatile i32* %d", shape=box];
+  n6 [label="%6 = xor i32 %4, %5"];
+  n9 [label="i32 -1", shape=box];
+
+  n6 -> n4 [label="3"];
+  n6 -> n5 [label="1",style=dotted];
+  n4 -> n3 [label="1",style=dotted];
+  n4 -> n2 [label="2"];
+  n2 -> n1 [label="1",style=dotted];
+  n2 -> n9 [label="1",style=dotted];
+}

@@ -1,0 +1,30 @@
+digraph split_graph {
+  na [label="i32 %a", shape=box];
+  nb [label="i32 %b", shape=box];
+  na1 [label="i8 %a1"];
+  na2 [label="i8 %a2"];
+  na3 [label="i8 %a3"];
+  na4 [label="i8 %a4"];
+  nb1 [label="i8 %b1"];
+  nb2 [label="i8 %b2"];
+  nb3 [label="i8 %b3"];
+  nb4 [label="i8 %b4"];
+  xor1 [label="xor i8 %a1, %b1"];
+  xor2 [label="xor i8 %a2, %b2"];
+  xor3 [label="xor i8 %a3, %b3"];
+  xor4 [label="xor i8 %a4, %b4"];
+  res [label="i32 %res", shape=box];
+
+  na -> na1; nb -> nb1;
+  na -> na2; nb -> nb2;
+  na -> na3; nb -> nb3;
+  na -> na4; nb -> nb4;
+  na1 -> xor1; nb1 -> xor1;
+  na2 -> xor2; nb2 -> xor2;
+  na3 -> xor3; nb3 -> xor3;
+  na4 -> xor4; nb4 -> xor4;
+  xor1 -> res;
+  xor2 -> res;
+  xor3 -> res;
+  xor4 -> res;
+}
