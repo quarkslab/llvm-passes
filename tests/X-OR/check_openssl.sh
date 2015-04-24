@@ -8,8 +8,8 @@ cd $builddir
 
 git clone --single-branch git://git.openssl.org/openssl.git
 cd openssl
-CC=clang ./Configure --openssldir=$PWD/build linux-x86_64 "-Xclang -load -Xclang LLVMObfuscateZero.so" > /dev/null || exit 2
-make -j2
+CC=clang ./Configure --openssldir=$PWD/build linux-x86_64 "-Xclang -load -Xclang LLVMX-OR.so" > /dev/null || exit 2
+make -j6
 make test
 
 cd ..

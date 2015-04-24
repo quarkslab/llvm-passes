@@ -134,6 +134,24 @@ private:
       return Prime;
   }
 
+  // Return a random prime number not equal to DifferentFrom
+  // If an error occurs returns 0
+  prime_type getPrime(prime_type DifferentFrom = 0) {
+      static std::uniform_int_distribution<prime_type> Rand(0, sizeof(Prime_array) / sizeof(prime_type));
+      size_t MaxLoop = 10;
+      prime_type Prime;
+
+      do {
+            Prime = Prime_array[Rand(Generator)];
+      } while(Prime == DifferentFrom && --MaxLoop);
+
+      if(!MaxLoop) {
+          return 0;
+      }
+
+      return Prime;
+  }
+
   Value *replaceZero(Instruction &Inst, Value *VReplace) {
     // Replacing 0 by:
     // prime1 * ((x | any1)**2) != prime2 * ((y | any2)**2)
