@@ -9,7 +9,7 @@ Required Background
 *******************
 
 This tutorial is the continuation of `this one <http://blog.quarkslab.com/turning-regular-code-into-atrocities-with-llvm.html>`_.
-If you are not familiar with LLVM pass development you should read the previous tutorial, the basics won't be covered in this tutorial.
+If you are not familiar with LLVM pass development you should read the previous tutorial, as the basics won't be covered in this tutorial.
 
 To go through the code samples given in this tutorial you will need to be able to read C, C++ code and simple LLVM bytecode.
 
@@ -17,15 +17,15 @@ Riddle
 ******
 
 Let's start with a riddle.
-The obfuscation we are going to implement will replace an operation `OP` by the sequence of instructions bellow.
+The obfuscation we are going to implement will replace an operation `OP` by the sequence of instructions below.
 Your job is to try to guess what `OP` is.
 
 Given:
 
-    * two operands `D` and `X` of same bitwidth
+    * two integers `D` and `X` of same bitwidth
     * :math:`Y = D \text{ OP } X`
-    * :math:`f: x = \sum x_i \cdot 2^i \mapsto x' = \sum x_i \cdot 3^i`
-    * :math:`h: x = \sum x_i \cdot 3^i \mapsto x' = \sum (x_i \text{ mod } 2) \cdot 2^i`
+    * :math:`f:x = \sum x_i \cdot 2^i \mapsto x' = \sum x_i \cdot 3^i`
+    * :math:`h:x = \sum x_i \cdot 3^i \mapsto x' = \sum (x_i \text{ mod } 2) \cdot 2^i`
 
 We are going to rewrite the operation `OP` as follows:
 
@@ -43,7 +43,7 @@ Don't cheat and try to find out what `OP` could be.
 Obfuscation
 ***********
 
-Ok for those of you who have guessed and the ones that skipped ahead the answer is `X-OR <http://le-monde-des-goodies.wifeo.com/images/x/xor/xor01.jpg>`_.
+Ok for those of you who have guessed and the ones that skipped ahead, the answer is `X-OR <http://le-monde-des-goodies.wifeo.com/images/x/xor/xor01.jpg>`_.
 
 Oops, not that XOR, this one:
 
@@ -56,12 +56,13 @@ Oops, not that XOR, this one:
           1      1       0
         =====  =====  =======
 
-The sequence of operations above (operands transformation, addition, result transformation) is a more complex, equivalent and harder to understand way to code a XOR.
-If you want to make sure that's the transformation is not trivial, post in the comments whether you found the solution of the riddle; and if you did the time it took you.
+The sequence of operations above (operands transformation, addition, result transformation) is a more complex, harder to understand way to code a XOR.
+If you want to make sure that the transformation is not trivial, post in the comments whether you found the solution of the riddle; and if you did, the time it took you.
 
-We chose to obfuscate XORs because this operator is very present in cryptography and... because we all get bored sometimes...
+We chose to obfuscate XORs because this operator is very present in cryptography... and because we all get bored sometimes.
 
 But you shouldn't trust me. Taking a look at OpenSSL code base::
+
     `find $OPENSSL_SRC -name "*.c" -exec grep -cE " \^ " {} \; | awk '{s+=$1} END {print s}'`
 
 we find around 648 XORs.
@@ -71,20 +72,19 @@ Behind the Scenes
 
 Now, since programmers don't really deal in magic (at least not officially), let's try to understand what happened.
 The first thing to understand is that a XOR operation is basically an ADD operation without carry.
-This means that, if we have a representation of our operands in which the ADD carries won't propagate, then XOR and ADD are almost the same operand (in this representation).
+This means that if we have a representation of our operands in which the ADD carries won't propagate, then XOR and ADD are equivalent.
 
 And this is exactly what we have done.
-The function `f` takes the base 2 coefficients (bits) of the operands and multiplies them by the corresponding power of 3.
+The function `f` takes the base 2 coefficients (bits) of the input and multiplies them by the corresponding power of 3.
 You may have noticed that this operation is *almost* a change of basis operation from base 2 to base 3 in which the 'bits' are not transformed.
 
 Since :math:`d_i \le 1 \text{ and } x_i \le 1` then :math:`a_i \le 2`.
-This means that the bits of the sum of the new operands are never going to propagate to the other bits, since their sum is smaller than the 'basis' in which they are represented (here 3).
+This means that the bits of A are never going to propagate to upper bits, since the sum of :math:`d_i` and :math:`x_i` is smaller than the 'basis' in which they are represented (here 3).
 
-Because no carry has propagated it is trivial to rewrite the result of the sum as base, with a simple modulo on the bits.
-This is what the function `h` does.
-And the modulo behaviour is consistent with what a XOR operation does.
+Because no carry has propagated, applying a modulo 2 on the bits of A and writing the result in base 2 (which is done by the h function) will give us the same behaviour as a XOR operation on D and X.
+Indeed, an addition modulo 2 is equivalent to a XOR.
 
-Bottom line by changing the representation of XOR operands we are able to guaranty that the equivalent ADD operation will not propagate carries.
+Bottom line: by changing the representation of XOR operands we are able to assure that the ADD operation will not propagate carries.
 Which means that in this new representation XORs ans ADDs are *almost* the same.
 And a simple modulo takes care of this difference.
 
@@ -95,8 +95,8 @@ Requirements
 Environment
 ***********
 
-To use the passes we are going to develop, you will need LLVM and clang sources and to build them.
-If you need details on how to get this you can refer to the 'Requirements' section of the `previous LLVM tutorial <http://blog.quarkslab.com/turning-regular-code-into-atrocities-with-llvm.html>`_.
+To use the passes we are going to develop, you will need LLVM and clang sources and you'll have to build them.
+If you need details on how to get these, you can refer to the 'Requirements' section of the `previous LLVM tutorial <http://blog.quarkslab.com/turning-regular-code-into-atrocities-with-llvm.html>`_.
 
 To make sure that we all have the same basic project infrastructure you can checkout the corresponding git repository::
 
@@ -118,9 +118,9 @@ It contains the followings:
 LLVM: the Programmer's Stone!
 =============================
 
-To implement the obfuscation detailed above we are going a create an LLVM `BasicBlockPass`.
-A `FunctionPass` might also be a reasonable choice since we are going to transform single instructions.
-However later on we will work on XOR chains (XORs using the result of other XORs as operand) and this choice will have a direct impact on our algorithms (spoiler!).
+To implement the obfuscation detailed above we are going a create an LLVM ``BasicBlockPass``.
+A ``FunctionPass`` might also be a reasonable choice since we are going to transform single instructions.
+However, later on we will work on XOR chains (XORs using the result of other XORs as operands), and this choice will have a direct impact on our algorithms (spoiler!).
 
 Here is our plan of attack:
 
@@ -136,7 +136,7 @@ Here is our plan of attack:
 
          propagated_transfo
 
-We'll start with the `basic_xor` branch, you might want to checkout this branch:
+We'll start with the ``basic_xor`` branch, you might want to checkout this branch:
 
 .. code:: bash
 
@@ -186,20 +186,20 @@ If we were to use the same base for every XORs the obfuscation pattern would be 
 
 Humm... we may have oversimplified things a little.
 In theory the base can be arbitrary (greater than 2!).
-But if we obfuscate operands which type is `X` bits long, we will need to store the partial sums of :math:`S = \sum (d_i + x_i) \cdot base^i \text{ , } i \in [O, X[`.
+But if we obfuscate operands which type is `L` bits long, we will need to store :math:`S = \sum (d_i + x_i) \cdot base^i \text{ , } i < L`.
 
-Are you beginning to see the problem? These values can become **HUGE**, well above what a 'standard' type might hold.
+Are you beginning to see the problem? This value can become **HUGE**, well above what a 'standard' type might hold.
 But we are programmers so 'huge' is not accurate enough...
-The maximum value of `S` is :math:`Base^OriginalNbBit - 1`.
+The maximum value of `S` is :math:`base^L - 1`.
 
-This means that we need :math:`floor(log_2(Base^OriginalNbBit - 1)) + 1` bits to store `S`.
+This means that we need :math:`floor(log_2(base^L - 1)) + 1` bits to store `S`.
 The good thing is that LLVM allows you create integer variables with an arbitrary bit size.
 Thanks to the LLVM API we can hold and apply *almost* any operation to integers of any size.
 
 This is awesome! LLVM is doing all the work for us!
 And to take advantage of this we only need two functions.
 
-A function that given the number of bits of the operands and a base, returns the required number of bits to represent the obfuscated operands:
+A function that, given the number of bits of the operands and a base, returns the required number of bits to represent the obfuscated operands:
 
 .. code:: C++
 
@@ -220,16 +220,16 @@ Except for the approximated formula to compute the required number of bits there
 This part is tricky so hang on tight.
 The returned number of bits actually has to hold two different types of value:
 
-    * The partial sums of `S`.
+    * The number `S`.
       (This is what we wrote the function for).
-    * The value of the base itself : ``TargetBase``.
+    * The value of the base itself: ``TargetBase``.
       This is because we need to compute the values of :math:`TargetBase^i`.
 
 For instance if ``OriginalSize == 1`` and ``TargetBase == 4`` we only need 2 bits to store `S` **but** 2 bits is not enough to hold the value `4`.
 Still there?
 
 Remember when I said we could apply any operation to any bit size?
-Well there is an exception, because of `this bug <https://llvm.org/bugs/show_bug.cgi?id=19797>`_ LLVM does not support division of integers of more than `128` bits.
+Well there is an exception, because of `this bug <https://llvm.org/bugs/show_bug.cgi?id=19797>`_. LLVM does not support division of integers of more than `128` bits.
 This is why there are ``MaxSupportedSize`` checks in the previous function.
 
 Because of this limit we need another function that, given the original size of the XOR operands, will return the maximum base we can use for the operands transformation.
@@ -248,17 +248,17 @@ Because of this limit we need another function that, given the original size of 
         return unsigned(2) << ((MaxSupportedSize / OriginalNbBit) - 1);
     }
 
-The maximum supported base is :math:`2^{(MaxSupportedSize / OriginalNbBit)}`.
+Whith :math:`M_s` the maximum supported size and `L` the original number of bits of the operands, the maximum supported base is :math:`M_b = 2^{(M_s/L)}`.
 But we have to make sure that this value is not going to overflow an unsigned.
-For instance if `OriginalNbBit` is `1` (for a boolean) the maximum base would be :math:`2^128 - 1`.
-And on a 64 bits OS, the maximum value for an `unsigned` is usually :math:`2^32 - 1` this is why the `if (MaxSupportedSize / OriginalNbBit > MaxSupportedBase)` test is required.
+For instance if `L` is `1` (for a boolean) the maximum base would be :math:`M_b = 2^128 - 1`.
+And on a 64 bits OS, the maximum value for an `unsigned` is usually :math:`2^32 - 1`: this is why the `(M/L > M_b)` test is required.
 
-Ok now that we know the constraints on the base choice we can randomly pick one in base in `[3, maxBase(OriginalNbBit)]`.
+We know the constraints on the base choice, so we can randomly pick one in `[3, maxBase(L)]`.
 
 And I Will... Transform You?
 +++++++++++++++++++++++++++++
 
-Ok, now we have XORs, we have transformation bases, so we're ready implement the transformations.
+Ok, now we have XORs, we have transformation bases, so we're ready to implement the transformations.
 
 We will need two functions:
     * One generating the instructions corresponding to the function `f`: `rewriteAsBaseN`
@@ -301,9 +301,9 @@ Just take a look at the way we handle types if you are not familiar with LLVM ty
     }
 
 
-The most interesting part in rewriteAsBase2 is the use of `APInt` to hold the `Base^{OriginalNbBit - 1}` value.
+The most interesting part in rewriteAsBase2 is the use of ``APInt`` to hold the :math:`base^{L - 1}` value.
 Since regular types might not be large enough to hold this value, we use an `APInt` to compute it at runtime (when the pass is applied).
-This is done by the function `APIntPow`. (If you need more info you can check the `doc <http://llvm.org/docs/doxygen/html/classllvm_1_1APInt.html#details>`_.)
+This is done by the function ``APIntPow``. (If you need more info you can check the `doc <http://llvm.org/docs/doxygen/html/classllvm_1_1APInt.html#details>`_.)
 
 
 .. code:: C++
@@ -357,7 +357,7 @@ Show Time
 Using the Pass
 ++++++++++++++
 
-The git branch `basic_xor` will allow you to run the pass without having to re-develop it yourself.
+The git branch ``basic_xor`` will allow you to run the pass without having to re-develop it yourself.
 The building process is the following:
 
 .. code:: bash
@@ -369,13 +369,13 @@ The building process is the following:
     >$ make
 
 Once the pass is built you will need a test code.
-For instance write the following code in a file `basic_test.c`:
+For instance write the following code in a file ``basic_test.c``:
 
 .. code:: C
 
     #include <stdio.h>
     #include <stdint.h>
-    
+
     int main() {
         volatile uint8_t a = 0, b = 1, c = 0;
         b=a^4;
@@ -510,7 +510,7 @@ There are 2 important things to notice in this code:
 
     * You may have noticed that the instructions generated only convert the first XOR operand (`a`).
       The other operand was the literal `4` in the original code.
-      Since this value is known at compile time the `IRBuilder` will compute the transformation—at compile time—and generate the corresponding transformed literal.
+      Since this value is known at compile time, the `IRBuilder` will compute the transformation—at compile time—and generate the corresponding transformed literal.
       This is why the second operand of `%133` is a literal `9`.
 
       If you are not convinced here is the transformation: :math:`4 = 1*2^2 + 0*2^1 + 0*2^0 \mapsto 1*3^2 + 0*3^1 + 0*3^0 = 9`.
@@ -545,7 +545,7 @@ To make sure the obfuscation produces the same results as the original code you 
     >$ make && make check
 
 One of the tests downloads, compiles and runs the test suite of OpenSSL.
-This may take some time but since OpenSSL heavily uses XORs it can help with finding very tricky bugs (remember the `requiredBits` function :p).
+This may take some time but since OpenSSL heavily uses XORs, it can help with finding very tricky bugs (remember the `requiredBits` function :p).
 
 
 Performances
@@ -558,13 +558,13 @@ Compilation   85s              587s
 Testing       27s              1217s
 ============  ===============  ================
 
-The enormous increase in compilation time is due to the fact that obfuscation of a single XOR generates about 300 new instructions (for 32 bits operands) and that most optimizations don't scale well with the number of instructions.
+The enormous increase in compilation time is due to the fact that obfuscation of a single XOR generates about 300 new instructions (for 32 bits operands), and that most optimizations don't scale well with the number of instructions.
 
-Regarding execution time it is easy to understand that replacing one simple XOR operation by 300 expensive instructions (mul, div, mod) is going to slow things down a bit...
+Regarding execution time, it is easy to understand that replacing one simple XOR operation by 300 expensive instructions (mul, div, mod) is going to slow things down a bit...
 
 But before you decide that this obfuscation is too expensive for production, remember that the obfuscation should only be applied to the relevant parts of code (crypto functions, DRM enforcement...).
 And, even there, it should only be applied to a subset of the eligible XORs to avoid making the pattern to obvious!
-However when validating your obfuscation you want to apply on *every* candidate to make sure to hit as many tricky cases as possible.
+However, when validating your obfuscation you want to apply on *every* candidate to make sure to hit as many tricky cases as possible.
 
 A Few Improvements
 ==================
@@ -578,10 +578,10 @@ To do so we are going to add the following to our pass:
 
         1. Transform `b` and `c` into `b'` and `c'`
         2. Create `add1' = b' + c'`
-        3. Transform `add1'` into its base 2 equivalent `add1`
-        4. Transform `add1'` and `d` into `add1''` and `d'`
+        3. Apply modulo 2 on `add1'` bits and transform into base 2 gives us `add1`
+        4. Transform `add1` and `d` into `add1''` and `d'`
         5. Create `add2' = add1'' + d'`
-        6. Transform `add2'` into its base 2 equivalent `add2`
+        6. Apply modulo 2 on `add2'` bits and transform into base 2 gives us `add2`
         7. Store `add2` in `a`
 
      Instead of doing this we could transform each operand only once and chain the adds on the transformed representations.
@@ -590,20 +590,20 @@ To do so we are going to add the following to our pass:
         1. Transform `b`, `c` and `d` into `b'`, `c'` and `d'`
         2. Create `add1'` such as `add1' = b' + c'`
         3. Create `add2'` such as `add2' = add1' + d'`
-        4. Transform `add2'` into its base 2 equivalent `add2`
+        4. Apply modulo 2 on `add2'` bits and transform into base 2 gives us `add2`
         5. Store `add2` in `a`
 
      This will reduce the number of transformations, which will reduce the number of instructions generated, making the code faster and the obfuscation a little less obvious.
-     This not as trivial as this but we will get the details sorted out later.
+     This is not that trivial, but we will get the details sorted out later.
 
     * If you have taken a look at the non-optimized obfuscated code, you've probably noticed that the pattern is very easy to spot.
-      There a nice exponential drawn by the increasing length of the base successive exponents.
+      There's a nice exponential drawn by the increasing length of the base successive exponents.
       *'Awesome an exponential \\o/'*
 
-      To make the transformation less regular and make pattern matching harder we could randomized the order of the transformations operations.
-      As we will see that will require a change of transformation algorithms, but if there is chance that it might annoy reverse engineers then it's worth our time :).
+      To make the transformation less regular and make pattern matching harder, we could randomized the order of the transformations operations.
+      As we will see, this will require a change of transformation algorithms, but if there is chance that it might annoy reverse engineers then it's worth our time :).
 
-From now on the code we will work on is on the `chained_xor` branch:
+From now on, we will work on the code in the `chained_xor` branch:
 
 .. code:: bash
 
@@ -652,7 +652,7 @@ Climbing Trees
 
 If you read the introduction you should remember that the base 'change' is intended to prevent the ADD carry from propagating.
 If we are to handled chained XORs we have to make sure that no carry is going to propagate when chaining ADDs.
-For the previous example it means that :math:`a_i + c_i + d_i < Base, i \in [0, OriginalNbBit[` 
+For the previous example it means that :math:`a_i + c_i + d_i < Base, i \in [0, OriginalNbBit[`
 
 To determine the minimum base eligible for the tree transformation we use the following algorithm:
 
@@ -876,32 +876,32 @@ This makes understanding the bytecode **very** laborious ...
 .. code:: llvm
 
     define i32 @main() #0 {
-    
+
       ; Some boring stuff
-    
+
       %2 = load volatile i32* %a, align 4
       %3 = load volatile i32* %b, align 4
-    
+
       ; Transforming 'a'
       %4 = zext i32 %2 to i64
       %5 = and i64 %4, 64
       %6 = lshr i64 %5, 6
       %7 = mul i64 %6, 4096
       %8 = add i64 0, %7
-    
+
       ; Transforming 'b'
       %133 = zext i32 %3 to i64
       %134 = and i64 %133, 2048
       %135 = lshr i64 %134, 11
       %136 = mul i64 %135, 4194304
       %137 = add i64 0, %136
-    
+
       ; Applying 'a^b'
       %262 = add i64 %132, %261
-    
+
       ; Preparing an exit point.
       ; Will be optimized out since it's unused.
-    
+
       ; Transforming 'c'
       %425 = load volatile i32* %c, align 4
       %426 = zext i32 %425 to i64
@@ -909,20 +909,20 @@ This makes understanding the bytecode **very** laborious ...
       %428 = lshr i64 %427, 26
       %429 = mul i64 %428, 4503599627370496
       %430 = add i64 0, %429
-    
+
       ; Applying '(a^b)^c'
       %555 = add i64 %262, %554
-    
+
       ; Transforming back '(a^b)^c'
       %556 = udiv i64 %555, 4611686018427387904
       %557 = urem i64 %556, 4
       %558 = urem i64 %557, 2
       %559 = shl i64 %558, 31
       %560 = or i64 0, %559
-    
+
       ; Final value
       %716 = trunc i64 %715 to i32
-    
+
       ; Some boring stuff
     }
 
@@ -956,16 +956,16 @@ To have a better understanding of what is happening we are going to benchmark th
 .. code:: C
 
     #define LOOP 100000000
-    
+
     int main() {
         volatile uint32_t a, b = -1, c = 100, d = -10, e = 750, f = 854721, g = 42;
-    
+
         for(size_t i = 0; i < LOOP; ++i) {
             a = b^c^d^e^f^g;
         }
-    
+
         printf("%d\n", a);
-    
+
         return 0;
     }
 
@@ -978,11 +978,11 @@ number of  Original code   Obfuscated code
 ---------  --------------  ---------------------------------------------------------
 XORs       exec time       exec time  additional number of inst  compile time   type
 =========  ==============  =========  =========================  =============  ====
-1          0.07s           +21757%    480                        +80%           i51 
-2          0.1s            +4600%     390                        +60%           i64 
-3          0.12s           +114900%   800                        +300%          i75 
-4          0.14s           +107042%   930                        +400%          i83 
-5          0.16s           +106150%   1090                       +500%          i90 
+1          0.07s           +21757%    480                        +80%           i51
+2          0.1s            +4600%     390                        +60%           i64
+3          0.12s           +114900%   800                        +300%          i75
+4          0.14s           +107042%   930                        +400%          i83
+5          0.16s           +106150%   1090                       +500%          i90
 =========  ==============  =========  =========================  =============  ====
 
 
@@ -1003,7 +1003,7 @@ One way to do this would be develop a pass to:
     * Split the XOR operands into smaller variables
     * Apply XORs on the new operands
     * Merge the results
- 
+
 Transforming this code snippet...
 
 .. code:: llvm
@@ -1122,49 +1122,49 @@ We get:
 
     define i32 @main() #0 {
       ; LLVM stuff
-    
+
       %2 = load i32* %a, align 4
       %3 = load i32* %b, align 4
       %4 = load i32* %c, align 4
-    
+
       ; Transforming 'b'
       %5 = and i32 %3, 3
       %6 = lshr i32 %5, 0
       %7 = trunc i32 %6 to i2
-    
+
       ; Transforming 'c'
       %53 = and i32 %4, 192
       %54 = lshr i32 %53, 6
       %55 = trunc i32 %54 to i2
-    
+
       ; Applying 'b & c'
       %101 = and i2 %46, %94
       %102 = and i2 %22, %88
       %103 = and i2 %10, %64
-    
+
       ; Unused back transformation of 'b & c'
       %117 = zext i2 %107 to i32
       %118 = shl i32 %117, 10
       %119 = or i32 0, %118
-    
+
       ; Original 'b & c' now unused
       %165 = and i32 %3, %4
-    
+
       ; Transforming 'a'
       %166 = and i32 %2, 3
       %167 = lshr i32 %166, 0
       %168 = trunc i32 %167 to i2
-    
+
       ; Applying 'a | (b & c)'
       %214 = or i2 %210, %107
       %215 = or i2 %207, %103
       %216 = or i2 %186, %111
-    
+
       ; Back transformation of 'a | (b & c)'
       %230 = zext i2 %226 to i32
       %231 = shl i32 %230, 6
       %232 = or i32 0, %231
-    
+
       %279 = call i32 (i8*, ...)* @printf(i8* getelementptr inbounds ([4 x i8]* @.str, i32 0, i32 0), i32 %277)
     }
 
@@ -1235,4 +1235,3 @@ THE END!
 In this post we've tried to present the different steps of obfuscation pass development, from the conception to the improvements.
 There are a few things that could be improved, most notably handling operations other than XORs.
 But we'll leave that to you!
-
