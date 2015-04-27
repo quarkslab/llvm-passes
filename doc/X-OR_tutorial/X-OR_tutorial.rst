@@ -262,7 +262,7 @@ Ok, now we have XORs, we have transformation bases, so we're ready to implement 
 
 We will need two functions:
     * One generating the instructions corresponding to the function `f`: `rewriteAsBaseN`
-    * The other generating the instructions corresponding to the function `h`: `rewriteAsBase2`
+    * The other generating the instructions corresponding to the function `h`: `transformToBaseTwoRepr`
 
 There is nothing worth talking about in `rewriteAsBaseN`.
 Just take a look at the way we handle types if you are not familiar with LLVM types.
@@ -301,14 +301,14 @@ Just take a look at the way we handle types if you are not familiar with LLVM ty
     }
 
 
-The most interesting part in rewriteAsBase2 is the use of ``APInt`` to hold the :math:`base^{L - 1}` value.
+The most interesting part in ``transformToBaseTwoRepr`` is the use of ``APInt`` to hold the :math:`base^{L - 1}` value.
 Since regular types might not be large enough to hold this value, we use an `APInt` to compute it at runtime (when the pass is applied).
 This is done by the function ``APIntPow``. (If you need more info you can check the `doc <http://llvm.org/docs/doxygen/html/classllvm_1_1APInt.html#details>`_.)
 
 
 .. code:: C++
 
-    Value *rewriteAsBase2(Value *Operand, unsigned Base, Type *OriginalType, IRBuilder<> &Builder) {
+    Value *transformToBaseTwoRepr(Value *Operand, unsigned Base, Type *OriginalType, IRBuilder<> &Builder) {
         Type *ObfuscatedType = Operand->getType();
 
         const unsigned OriginalNbBit = OriginalType->getIntegerBitWidth();
@@ -471,7 +471,7 @@ Here is a portion of the obfuscated code after applying the pass.
       %133 = add i51 %132, 9
 
       ; Transforming back the result
-      ; produced by rewriteAsBase2
+      ; produced by transformToBaseTwoRepr
       %134 = udiv i51 %133, 617673396283947
       %135 = urem i51 %134, 2
       %136 = shl i51 %135, 31
@@ -596,9 +596,7 @@ To do so we are going to add the following to our pass:
      This will reduce the number of transformations, which will reduce the number of instructions generated, making the code faster and the obfuscation a little less obvious.
      This is not that trivial, but we will get the details sorted out later.
 
-    * If you have taken a look at the non-optimized obfuscated code, you've probably noticed that the pattern is very easy to spot.
-      There's a nice exponential drawn by the increasing length of the base successive exponents.
-      *'Awesome an exponential \\o/'*
+    * If you have taken a look at the non-optimized obfuscated code, you've probably noticed that the pattern is very easy to spot. Each computation of a power of the base appears very clearly… *'Awesome an exponentiation \\o/'*
 
       To make the transformation less regular and make pattern matching harder, we could randomized the order of the transformations operations.
       As we will see, this will require a change of transformation algorithms, but if there is chance that it might annoy reverse engineers then it's worth our time :).
@@ -645,7 +643,30 @@ But our obfuscation will have to be able to handle non-optimized code hence our 
 Growing the Trees
 +++++++++++++++++
 
-.. TODO
+Building the DAG is pretty easy thanks to LLVM's SSA representation. Each instruction has some ``Use``, generally other instruction that use it as an operand. So building the DAG is juste a matter of walking the use and the operands of each instruction, keeping the one that involve a XOR and leaving the other aside. The recursive part looks like this:
+
+.. code:: C++
+
+    void walkInstructions(Tree_t &T, Instruction *Inst) {
+        if(not isEligibleInstruction(Inst))
+            return;
+        [...]
+        for (auto const &NVUse : Inst->uses()) {
+            if(Instruction *UseInst = dyn_cast<Instruction>(NVUse.getUser())) {
+                walkInstructions(T, UseInst);
+            }
+        }
+        [...]
+        for (auto const &Op : Inst->operands()) {
+            Instruction *OperandInst = dyn_cast<Instruction>(&Op);
+            if (OperandInst and isEligibleInstruction(OperandInst))
+                T.at(Inst).insert(OperandInst);
+        }
+    }
+
+Range-based loops from C++11 are really handy!
+
+
 
 Climbing Trees
 ++++++++++++++
@@ -804,8 +825,8 @@ Here is the new `rewriteAsBaseN` function:
 
 The `getShuffledRange` function returns a random shuffle of :math:`[0, OriginalNbBit[`.
 
-rewriteAsBase2
-++++++++++++++
+transformToBaseTwoRepr
+++++++++++++++++++++++
 
 This one is a bit trickier.
 So far we used Euclide's algorithm, but it is too tightly linked to the computation order.
@@ -817,7 +838,7 @@ And we are going to use the same `getExponentMap` as earlier for the different e
 
 .. code:: C++
 
-    Value *rewriteAsBase2(Value *Operand, unsigned Base, Type *OriginalType,
+    Value *transformToBaseTwoRepr(Value *Operand, unsigned Base, Type *OriginalType,
                           IRBuilder<> &Builder) {
         Type *ObfuscatedType = Operand->getType();
 
@@ -1205,8 +1226,6 @@ It looks like LLVM managed to merge some parts of the transformations.
 However since I don't want to loose what sanity I have left I haven't looked too closely to what's happening...
 If you have enough courage, let us know in the comments!
 
-.. FIXME illustrate the result...
-
 Performances
 ************
 
@@ -1226,8 +1245,6 @@ This is probably due to the reduction of the size of integer types used during t
 Now you should remember that obfuscation are **not** meant to be applied on the whole program to be obfuscated.
 Those performances measurements are worst case scenario for a program using a lot of XORs!
 So don't throw out this obfuscation because of those numbers.
-
-.. fixme
 
 THE END!
 ========

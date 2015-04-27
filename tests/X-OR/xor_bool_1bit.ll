@@ -39,7 +39,3 @@ declare i32 @puts(i8* nocapture readonly) #1
 attributes #0 = { nounwind uwtable "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #1 = { nounwind "less-precise-fpmad"="false" "no-frame-pointer-elim"="false" "no-infs-fp-math"="false" "no-nans-fp-math"="false" "stack-protector-buffer-size"="8" "unsafe-fp-math"="false" "use-soft-float"="false" }
 attributes #2 = { nounwind }
-
-!llvm.ident = !{!0}
-
-!0 = metadata !{metadata !"Debian clang version 3.5.0-9 (tags/RELEASE_350/final) (based on LLVM 3.5.0)"}
