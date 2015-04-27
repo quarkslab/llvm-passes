@@ -55,7 +55,7 @@ class X_OR : public BasicBlockPass {
 
             // Preparing the result in base 2 for later use
             Value *InvertResult =
-                rewriteAsBase2(NewValue, NewBase, Inst.getType(), Builder);
+                transformToBaseTwoRepr(NewValue, NewBase, Inst.getType(), Builder);
 
             // Casting back for non XOR operation on NewValue
             Inst.replaceAllUsesWith(InvertResult);
@@ -110,7 +110,7 @@ class X_OR : public BasicBlockPass {
         return Accu;
     }
 
-    Value *rewriteAsBase2(Value *Operand, unsigned Base, Type *OriginalType,
+    Value *transformToBaseTwoRepr(Value *Operand, unsigned Base, Type *OriginalType,
                           IRBuilder<> &Builder) {
         Type *ObfuscatedType = Operand->getType();
 
