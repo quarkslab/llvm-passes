@@ -186,13 +186,13 @@ If we were to use the same base for every XORs the obfuscation pattern would be 
 
 Humm... we may have oversimplified things a little.
 In theory the base can be arbitrary (greater than 2!).
-But if we obfuscate operands which type is `L` bits long, we will need to store :math:`S = \sum (d_i + x_i) \cdot base^i \text{ , } i < L`.
+But if we obfuscate operands which type is :math:`N_b` bits long, we will need to store :math:`S = \sum (d_i + x_i) \cdot base^i \text{ , } i < N_b`.
 
 Are you beginning to see the problem? This value can become **HUGE**, well above what a 'standard' type might hold.
 But we are programmers so 'huge' is not accurate enough...
-The maximum value of `S` is :math:`base^L - 1`.
+The maximum value of `S` is :math:`base^{N_b} - 1`.
 
-This means that we need :math:`floor(log_2(base^L - 1)) + 1` bits to store `S`.
+This means that we need :math:`floor(log_2(base^{N_b} - 1)) + 1` bits to store `S`.
 The good thing is that LLVM allows you create integer variables with an arbitrary bit size.
 Thanks to the LLVM API we can hold and apply *almost* any operation to integers of any size.
 
@@ -248,12 +248,12 @@ Because of this limit we need another function that, given the original size of 
         return unsigned(2) << ((MaxSupportedSize / OriginalNbBit) - 1);
     }
 
-Whith :math:`M_s` the maximum supported size and `L` the original number of bits of the operands, the maximum supported base is :math:`M_b = 2^{(M_s/L)}`.
+Whith :math:`M_s` the maximum supported size and :math:`N_b` the original number of bits of the operands, the maximum supported base is :math:`M_b = 2^{(M_s/N_b)}`.
 But we have to make sure that this value is not going to overflow an unsigned.
 For instance if `L` is `1` (for a boolean) the maximum base would be :math:`M_b = 2^128 - 1`.
-And on a 64 bits OS, the maximum value for an `unsigned` is usually :math:`2^32 - 1`: this is why the `(M/L > M_b)` test is required.
+And on a 64 bits OS, the maximum value for an `unsigned` is usually :math:`2^32 - 1`: this is why the :math:`(M/N_b > M_b)` test is required.
 
-We know the constraints on the base choice, so we can randomly pick one in `[3, maxBase(L)]`.
+We know the constraints on the base choice, so we can randomly pick one in :math:`[3, maxBase(N_b)]`.
 
 And I Will... Transform You?
 +++++++++++++++++++++++++++++
@@ -301,7 +301,7 @@ Just take a look at the way we handle types if you are not familiar with LLVM ty
     }
 
 
-The most interesting part in ``transformToBaseTwoRepr`` is the use of ``APInt`` to hold the :math:`base^{L - 1}` value.
+The most interesting part in ``transformToBaseTwoRepr`` is the use of ``APInt`` to hold the :math:`base^{N_b - 1}` value.
 Since regular types might not be large enough to hold this value, we use an `APInt` to compute it at runtime (when the pass is applied).
 This is done by the function ``APIntPow``. (If you need more info you can check the `doc <http://llvm.org/docs/doxygen/html/classllvm_1_1APInt.html#details>`_.)
 
@@ -638,12 +638,12 @@ The most natural way to store dependency information is to use a directed graph 
 .. image:: simple.png
 
 This example may seam oversimplified but since XOR is a commutative and associative operation, LLVM optimizations will always be able to reduce any XOR sequence into a graph of this type (and they usually do...).
-But our obfuscation will have to be able to handle non-optimized code hence our algorithms will have to be generic...
+But our obfuscation will have to be able to handle non-optimized coden hence our algorithms will have to be generic.
 
 Growing the Trees
 +++++++++++++++++
 
-Building the DAG is pretty easy thanks to LLVM's SSA representation. Each instruction has some ``Use``, generally other instruction that use it as an operand. So building the DAG is juste a matter of walking the use and the operands of each instruction, keeping the one that involve a XOR and leaving the other aside. The recursive part looks like this:
+Building the DAG is pretty easy thanks to LLVM's SSA representation. Each instruction has some ``Use``, generally other instruction that use it as an operand. So building the DAG is juste a matter of walking the uses and the operands of each instruction, keeping the ones that involve a XOR and leaving the others aside. The recursive part looks like this:
 
 .. code:: C++
 
@@ -671,9 +671,9 @@ Range-based loops from C++11 are really handy!
 Climbing Trees
 ++++++++++++++
 
-If you read the introduction you should remember that the base 'change' is intended to prevent the ADD carry from propagating.
-If we are to handled chained XORs we have to make sure that no carry is going to propagate when chaining ADDs.
-For the previous example it means that :math:`a_i + c_i + d_i < Base, i \in [0, OriginalNbBit[`
+If you read the introduction, you should remember that the base 'change' is intended to prevent the ADD carry from propagating.
+If we want to handle chained XORs we have to make sure that no carry is going to propagate when chaining ADDs.
+For the previous example, it means that :math:`a_i + c_i + d_i < Base, i \in [0, N_b[`
 
 To determine the minimum base eligible for the tree transformation we use the following algorithm:
 
@@ -703,7 +703,7 @@ To determine the minimum base eligible for the tree transformation we use the fo
         }
     }
 
-This algorithm will recusively go through the tree, and assign to each node X the maximum value that its :math:`X_i, i \in [0, OriginalNbBit[` can attain.
+This algorithm will recusively go through the tree, and assign to each node X the maximum value that its :math:`x_i, i \in [0, N_b[` can attain.
 
 And this maximum is:
 
@@ -712,9 +712,9 @@ And this maximum is:
 
 If this is not clear enough you can take a look at the edge labels in the above graph.
 
-To choose a base for a tree we need to apply the previous algorithm to all the roots of tree.
+To choose a base for a tree we, need to apply the previous algorithm to all the roots of tree.
 The minimum base for the tree will then be the maximum of the returned values.
-Finally we randomly pick a base between the minimum and the maximum (see `maxBase` function) if possible.
+Finally we randomly pick a base between the minimum and the maximum (see ``maxBase`` function) if possible.
 
 .. code:: C++
 
@@ -741,20 +741,20 @@ Cut Them Down!
 ++++++++++++++
 
 The last thing to do with these trees is to transform them.
-This will be done as before in the `runOnBasicBlock`.
+This will be done as before in the ``runOnBasicBlock`` function.
 This function will now apply a recursive transformation on all the roots of each tree.
-(We won't paste the code here so you should open the `$PASSDIR/llvm-passes/X-OR/X-OR.cpp`.)
+(We won't paste the code here so you should open the ``$PASSDIR/llvm-passes/X-OR/X-OR.cpp``.)
 
-The recursive transformation function `recursiveTransform` will, given a node `N`:
+The recursive transformation function ``recursiveTransform`` will, given a node `N`:
 
     1. Check each of `N`'s operands:
-        1. If it has not been transformed, i.e it is not in `TransfoRegister`
-            1. If it is not a XOR *OR* if it's a XOR not in the current `BasicBlock`, transform it and register the association :math:`(\text{original value, new base}) \mapsto \text{transformed value}` in `TransfoRegister`.
-            2. Else call recursively `recursiveTransform` on the operand.
+        1. If it has not been transformed, i.e it is not in ``TransfoRegister``:
+            1. If it is not a XOR **or** if it's a XOR not in the current ``BasicBlock``, transform it and register the association (original value, new base) :math:`\mapsto` transformed value in ``TransfoRegister``.
+            2. Else call recursively ``recursiveTransform`` on the operand.
         2. Else recover the transformed value.
-    2. Once the operands have been transformed, apply an ADD on the transformed operands and register the the result of the add in `TransfoRegister` as :math:`(\text{original XOR, new base}) \mapsto \text{new add}`.
-       We register the new value so that when the recursive function hits a XOR operand we use the result of the ADD as the new operand.
-    3. Prepare the transformed back value of the ADD in case the result of the XOR was used outside of the tree (i.e by something else than a XOR, or by a XOR outside the current `BasicBlock`).
+    2. Once the operands have been transformed, apply an ADD on the transformed operands and register the result of the add in ``TransfoRegister`` as (original XOR, new base) :math:`\mapsto` new add.
+       We register the new value so that when the recursive function hits a XOR operand, we use the result of the ADD as the new operand.
+    3. Prepare the transformed back value of the ADD in case the result of the XOR is used outside of the tree (i.e by something else than a XOR, or by a XOR outside the current ``BasicBlock``).
        And replace those uses with the new transformed back value.
 
 .. FIXME: Add code?
@@ -764,12 +764,12 @@ Breaking the Patterns
 
 Okay, after changing everything to handle chained XOR let's do something easier...
 
-What we want is to be able to randomly re-order the transformations' instructions. However the transformation algorithms we are currently using do not allow this. But let's pull our sleeves up and find new ones!
+We want to be able to randomly re-order the transformations' instructions. However, the transformation algorithms we are currently using do not allow this. But let's pull our sleeves up and find new ones!
 
 rewriteAsBaseN
 ++++++++++++++
 
-Changing the `rewriteAsBaseN` is trivial.
+Changing the ``rewriteAsBaseN`` is trivial.
 The only thing we need to change is the way the successive exponents are computed.
 
 .. code:: C++
@@ -782,12 +782,12 @@ The only thing we need to change is the way the successive exponents are compute
     }
 
 In the original version of the algorithm we updated the exponent when going through the loop.
-However if the want to go through the loop in a random order, we will need to compute the exponents beforehand (don't forget that we need to use `APInt` to compute those exponents).
+But if we want to go through the loop in a random order, we will need to compute the exponents beforehand (don't forget that we need to use ``APInt`` to compute those exponents).
 We can store those values in a mapping :math:`i \mapsto Base^i`.
-This mapping will be computed on demand since we can not compute it for every possible base.
-If you are interested in the details of the function `getExponentMap` please refer to the code.
+This mapping will be computed on demand, since we can not compute it for every possible base.
+If you are interested in the details of the function ``getExponentMap`` please refer to the code.
 
-Here is the new `rewriteAsBaseN` function:
+Here is the new ``rewriteAsBaseN`` function:
 
 .. code:: C++
 
@@ -823,7 +823,7 @@ Here is the new `rewriteAsBaseN` function:
         return Accu;
     }
 
-The `getShuffledRange` function returns a random shuffle of :math:`[0, OriginalNbBit[`.
+The ``getShuffledRange`` function returns a random shuffle of :math:`[0, N_b[`.
 
 transformToBaseTwoRepr
 ++++++++++++++++++++++
@@ -834,7 +834,7 @@ The new algorithm we are going to use to recover the :math:`x_i` from :math:`\su
 
 :math:`x_j = \frac{\sum x_i \cdot Base^i}{Base^j} \text{ mod } Base`
 
-And we are going to use the same `getExponentMap` as earlier for the different exponents.
+And we are going to use the same ``getExponentMap`` as earlier for the different exponents.
 
 .. code:: C++
 
@@ -869,7 +869,7 @@ And we are going to use the same `getExponentMap` as earlier for the different e
 Code Sample
 ***********
 
-After all this work let's take a look at the code produced.
+After all this work, let's take a look at the code produced.
 
 Here is the code to obfuscate:
 
@@ -961,16 +961,16 @@ Compilation   85s              490s
 Testing       27s              1380s
 ============  ===============  ================
 
-As you can see, when reducing the number of transformations thanks the chained XORs, we have reduced by compile time by ~15%.
+As you can see, when reducing the number of transformations thanks to the chained XORs, we have reduced compile time by ~15%.
 
 But at the same time we have increased execution time by ~10%.
 One of the reasons of this slowdown is that, by chaining XORs, we use larger bases.
 And using a larger base means using larger integer types.
 
-In the previous version an obfuscated `i32` XOR was most likely to be transformed using type 'smaller' than `i64`.
+In the previous version, an obfuscated `i32` XOR was most likely to be transformed using a type 'smaller' than `i64`.
 Which meant that all transformation instructions could use the CPU hard coded instructions.
-However with chained XORs it is likely that the obfuscated types are greater than `i64` and require the use of software implemented mul, mod...
-But even if the complexity of instructions increases their number is reduced. This double variation probably helps mitigate the slowdown.
+However, with chained XORs it is likely that the obfuscated types are greater than `i64` and require the use of software implemented mul, mod...
+But even if the complexity of instructions increases, their number is reduced. This double variation probably helps mitigate the slowdown.
 
 To have a better understanding of what is happening we are going to benchmark the following code:
 
@@ -1010,7 +1010,7 @@ XORs       exec time       exec time  additional number of inst  compile time   
 Divide to Conquer
 =================
 
-The last thing we are to do to improve this pass is to combine with another pass.
+The last thing we will do to improve this pass is to combine with another pass.
 The size (in bits) of the operands we want to obfuscate has a huge impact on:
 
     * Wether or not we can apply the obfuscation on a XOR chain.
@@ -1018,12 +1018,12 @@ The size (in bits) of the operands we want to obfuscate has a huge impact on:
       More than this would require to use integers greater than 128 bits which are not supported.
     * The speed of the instructions used and their number (see the performance section above).
 
-Therefor it would be nice to reduce the size of those operands before applying the X-OR pass.
-One way to do this would be develop a pass to:
+Therefore it would be nice to reduce the size of those operands before applying the X-OR pass.
+One way to do this would be to develop a pass that:
 
-    * Split the XOR operands into smaller variables
-    * Apply XORs on the new operands
-    * Merge the results
+    * Split the XOR operands into smaller variables.
+    * Apply XORs on the new operands.
+    * Merge the results.
 
 Transforming this code snippet...
 
@@ -1035,11 +1035,11 @@ Transforming this code snippet...
 
 .. image:: split.png
 
-Actually this transformation could be applied not only to XORs but to *any* bitwise operator (XOR, AND, OR).
+Actually, this transformation could be applied not only to XORs but to *any* bitwise operator (XOR, AND, OR).
 And you could chain transformations in the exact same way we chained XORs transformations!
-Bottom line this new pass would be pretty similar to X-OR.
+Bottom line: this new pass would be pretty similar to X-OR.
 
-We will now use the last branch `propagated_transfo`:
+We will now use the last branch ``propagated_transfo``:
 
 .. code:: bash
 
@@ -1049,19 +1049,19 @@ Core Logic
 **********
 
 To take advantage of the work we have already done, we have extracted a generic "propagated transformation" class.
-This class will detect eligible variables (to be defined by the specific transformation), build the dependency trees and apply the transformations (defined by the specific transformation).
+This class will detect eligible variables (to be defined by the specific transformation), build the dependency trees and apply the transformations (to be defined).
 
-The only main change we have to make to functions we developed for X-OR is to handle transformation turning one `Value` into an array of `Value`.
+The only main change we have to make to the functions we developed for X-OR is to handle transformation turning one ``Value`` into an array of ``Value``.
 
 If you are interested in developing a new transformation with the same properties as X-OR you should be able to use it pretty easily.
-However we will not get into the details of its implementation here.
+However, we will not get into the details of its implementation here.
 
 Get a Knife
 +++++++++++
 
 Since this new pass is very similar to X-OR the interesting parts are the new transformation functions.
 
-The 'forward' transformation splits a variable into :math:`\frac{OriginalNbBit}{SplitSize}` new variables.
+The 'forward' transformation splits a variable into :math:`\frac{N_b}{SplitSize}` new variables.
 Each new variable will be obtained by masking ans shifting the original variable:
 
 .. code:: C++
@@ -1092,7 +1092,7 @@ Each new variable will be obtained by masking ans shifting the original variable
         return NewOperands;
     }
 
-And to transform back a vector of `value` we do the exact opposite.
+And to transform back a vector of ``Value``, we do the exact opposite:
 
 .. code:: C++
 
@@ -1116,7 +1116,7 @@ And to transform back a vector of `value` we do the exact opposite.
     }
 
 Pretty straight forward.
-But since we only handle splits of identical size (for simplicity), we need to choose a `SplitSize` that is a divisor of `OriginalNbBit`. This is done by computing all the divisors of `OriginalNbBit` (in `O(sqrt(OriginalNbBit))`) and randomly picking one of them.
+But since we only handle splits of identical size (for simplicity), we need to choose a `SplitSize` that is a divisor of :math:`N_b`. This is done by computing all the divisors of :math:`N_b` (in :math:`O(sqrt(N_b))`) and randomly picking one of them.
 
 A Blunt Knife
 +++++++++++++
@@ -1189,9 +1189,9 @@ We get:
       %279 = call i32 (i8*, ...)* @printf(i8* getelementptr inbounds ([4 x i8]* @.str, i32 0, i32 0), i32 %277)
     }
 
-So everything looks good right?
+So everything looks good, right?
 
-Well now try to optimize the obfuscated code...
+Well, now try to optimize the obfuscated code...
 
 .. code:: bash
 
@@ -1212,18 +1212,18 @@ To combine the two passes you can either apply them one by one with `opt` or app
 
     LD_LIBRARY_PATH=$PASSDIR/build/llvm-passes clang -Xclang -load -Xclang LLVMSplitBitwiseOp.so -Xclang -load -Xclang LLVMX-OR.so split.c -S -emit-llvm
 
-After applying the two optimizations the code becomes too big to paste here.
-But happens is:
+After applying the two optimizations, the code becomes too big to paste here.
+But this happens:
 
-    * The XORs are split into several smaller ones hence generating a forest of independent small XORs trees.
+    * The XORs are split into several smaller ones, hence generating a forest of independent small XORs trees.
     * Each XOR tree is *idependently* obfuscated by X-OR. This means that the obfuscated types of each subtree can be different (and they really are in practice)!
     * And the optimizer will not optimize out the splits!
 
-I'll let you take a look at the result. It is becoming too big to be pasted here. With the given example LLVM produces ~1300 obfuscated LLVM instructions from the original ~10.
+I'll let you take a look at the result. With the given example LLVM produces ~1300 obfuscated LLVM instructions from the original ~10.
 
 When optimizing with -O2 the ~1300 instructions are reduced to ~600.
 It looks like LLVM managed to merge some parts of the transformations.
-However since I don't want to loose what sanity I have left I haven't looked too closely to what's happening...
+However, since I don't want to loose what sanity I have left, I haven't looked too closely to what's happening...
 If you have enough courage, let us know in the comments!
 
 Performances
@@ -1243,12 +1243,12 @@ Regarding runtime we have gained 10%!
 This is probably due to the reduction of the size of integer types used during the X-OR obfuscation, but I have not checked it in depth.
 
 Now you should remember that obfuscation are **not** meant to be applied on the whole program to be obfuscated.
-Those performances measurements are worst case scenario for a program using a lot of XORs!
+Those performances measurements are worst case scenarios for a program using a lot of XORs!
 So don't throw out this obfuscation because of those numbers.
 
 THE END!
 ========
 
-In this post we've tried to present the different steps of obfuscation pass development, from the conception to the improvements.
+In this post, we've tried to present the different steps of obfuscation pass development, from the conception to the improvements.
 There are a few things that could be improved, most notably handling operations other than XORs.
 But we'll leave that to you!
