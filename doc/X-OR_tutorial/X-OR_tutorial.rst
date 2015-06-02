@@ -22,18 +22,18 @@ Your job is to try to guess what `OP` is.
 
 Given:
 
-    * two integers `D` and `X` of same bitwidth
+    * two integers `D` and `X` of same bit width
     * :math:`Y = D \text{ OP } X`
     * :math:`f:x = \sum x_i \cdot 2^i \mapsto x' = \sum x_i \cdot 3^i`
     * :math:`h:x = \sum x_i \cdot 3^i \mapsto x' = \sum (x_i \text{ mod } 2) \cdot 2^i`
 
 We are going to rewrite the operation `OP` as follows:
 
-    * Transform operands `D` and `X` with f:
+    * Transform operands `D` and `X` with `f`:
         :math:`D'=f(D) \text{ and } X'=f(X)`
     * Apply the ADD operation to the new operands:
         :math:`A=D'+X'=\sum (d_i + x_i) \cdot 3^i`
-    * Transform back the result with h:
+    * Transform back the result with `h`:
         :math:`A'=h(A)=h(D'+X')`
     * And we magically obtain:
         :math:`h(D'+X')=D \text{ OP } X`
@@ -81,7 +81,7 @@ You may have noticed that this operation is *almost* a change of basis operation
 Since :math:`d_i \le 1 \text{ and } x_i \le 1` then :math:`a_i \le 2`.
 This means that the bits of A are never going to propagate to upper bits, since the sum of :math:`d_i` and :math:`x_i` is smaller than the 'basis' in which they are represented (here 3).
 
-Because no carry has propagated, applying a modulo 2 on the bits of A and writing the result in base 2 (which is done by the h function) will give us the same behaviour as a XOR operation on D and X.
+Because no carry has propagated, applying a modulo 2 on the bits of A and writing the result in base 2 (which is done by the `h` function) will give us the same behaviour as a XOR operation on D and X.
 Indeed, an addition modulo 2 is equivalent to a XOR.
 
 Bottom line: by changing the representation of XOR operands we are able to assure that the ADD operation will not propagate carries.
@@ -119,8 +119,7 @@ LLVM: the Programmer's Stone!
 =============================
 
 To implement the obfuscation detailed above we are going a create an LLVM ``BasicBlockPass``.
-A ``FunctionPass`` might also be a reasonable choice since we are going to transform single instructions.
-However, later on we will work on XOR chains (XORs using the result of other XORs as operands), and this choice will have a direct impact on our algorithms (spoiler!).
+A ``FunctionPass`` might also be a reasonable choice because we will work on XOR chains (XORs using the result of other XORs as operands) later, and this choice will have a direct impact on our algorithms (spoiler!).
 
 Here is our plan of attack:
 
@@ -149,7 +148,7 @@ Enough chit-chat! To implement the first version of the obfuscation we need to:
 
     1. Find all the XORs in the current `BasicBlock`.
     2. Choose the base used to transform the XOR operands.
-       In the introduction we used base 3, but this can be generalized to an arbitrary base (almost arbitrary...).
+       In the introduction we use base 3, but this can be generalized to an arbitrary base (almost arbitrary...).
     3. Transform the XORs' operands.
     4. Create an ADD between the transformed operands.
     5. Transform back the result of the ADD to a standard representation.
@@ -248,7 +247,7 @@ Because of this limit we need another function that, given the original size of 
         return unsigned(2) << ((MaxSupportedSize / OriginalNbBit) - 1);
     }
 
-Whith :math:`M_s` the maximum supported size and :math:`N_b` the original number of bits of the operands, the maximum supported base is :math:`M_b = 2^{(M_s/N_b)}`.
+With :math:`M_s` the maximum supported size and :math:`N_b` the original number of bits of the operands, the maximum supported base is :math:`M_b = 2^{(M_s/N_b)}`.
 But we have to make sure that this value is not going to overflow an unsigned.
 For instance if `L` is `1` (for a boolean) the maximum base would be :math:`M_b = 2^128 - 1`.
 And on a 64 bits OS, the maximum value for an `unsigned` is usually :math:`2^32 - 1`: this is why the :math:`(M/N_b > M_b)` test is required.
@@ -358,7 +357,7 @@ Using the Pass
 ++++++++++++++
 
 The git branch ``basic_xor`` will allow you to run the pass without having to re-develop it yourself.
-The building process is the following:
+The build process is the following:
 
 .. code:: bash
 
@@ -397,6 +396,8 @@ And to make sure the obfuscation is not trivial, you can optimize the obfuscated
 .. code:: bash
 
     >$ opt -S path/to/test/obfuscated.ll -O2 -o obfuscated_optimized.ll
+
+and make sure the XOR is not back.
 
 
 Generated Code
@@ -545,7 +546,7 @@ To make sure the obfuscation produces the same results as the original code you 
     >$ make && make check
 
 One of the tests downloads, compiles and runs the test suite of OpenSSL.
-This may take some time but since OpenSSL heavily uses XORs, it can help with finding very tricky bugs (remember the `requiredBits` function :p).
+This may take some time but since OpenSSL heavily uses XORs, it helped us a lot to find very tricky bugs (remember the `requiredBits` function :p).
 
 
 Performances
@@ -558,12 +559,12 @@ Compilation   85s              587s
 Testing       27s              1217s
 ============  ===============  ================
 
-The enormous increase in compilation time is due to the fact that obfuscation of a single XOR generates about 300 new instructions (for 32 bits operands), and that most optimizations don't scale well with the number of instructions.
+The enormous increase in compilation time is due to the fact that obfuscation of a single XOR generates about 300 new instructions (for 32 bits operands), and that many optimizations don't scale linearly with the number of instructions.
 
-Regarding execution time, it is easy to understand that replacing one simple XOR operation by 300 expensive instructions (mul, div, mod) is going to slow things down a bit...
+Regarding execution time, it is easy to understand that replacing one simple XOR operation by 300 expensive instructions (`mul`, `div`, `mod`) is going to slow things down a bit...
 
 But before you decide that this obfuscation is too expensive for production, remember that the obfuscation should only be applied to the relevant parts of code (crypto functions, DRM enforcement...).
-And, even there, it should only be applied to a subset of the eligible XORs to avoid making the pattern to obvious!
+And, even there, it should only be applied to a subset of the eligible XORs to avoid making the pattern too obvious!
 However, when validating your obfuscation you want to apply on *every* candidate to make sure to hit as many tricky cases as possible.
 
 A Few Improvements
@@ -598,7 +599,7 @@ To do so we are going to add the following to our pass:
 
     * If you have taken a look at the non-optimized obfuscated code, you've probably noticed that the pattern is very easy to spot. Each computation of a power of the base appears very clearly… *'Awesome an exponentiation \\o/'*
 
-      To make the transformation less regular and make pattern matching harder, we could randomized the order of the transformations operations.
+      To make the transformation less regular and make pattern matching harder, we could randomize the order of the transformations operations.
       As we will see, this will require a change of transformation algorithms, but if there is chance that it might annoy reverse engineers then it's worth our time :).
 
 From now on, we will work on the code in the `chained_xor` branch:
@@ -638,12 +639,12 @@ The most natural way to store dependency information is to use a directed graph 
 .. image:: simple.png
 
 This example may seam oversimplified but since XOR is a commutative and associative operation, LLVM optimizations will always be able to reduce any XOR sequence into a graph of this type (and they usually do...).
-But our obfuscation will have to be able to handle non-optimized coden hence our algorithms will have to be generic.
+But our obfuscation will have to be able to handle non-optimized code hence our algorithms will have to be generic.
 
 Growing the Trees
 +++++++++++++++++
 
-Building the DAG is pretty easy thanks to LLVM's SSA representation. Each instruction has some ``Use``, generally other instruction that use it as an operand. So building the DAG is juste a matter of walking the uses and the operands of each instruction, keeping the ones that involve a XOR and leaving the others aside. The recursive part looks like this:
+Building the DAG is pretty easy thanks to LLVM's SSA representation. Each instruction has some ``Use``, generally other instruction that use it as an operand. So building the DAG is just a matter of walking the uses and the operands of each instruction, keeping the ones that involve a XOR and leaving the others aside. The recursive part looks like this:
 
 .. code:: C++
 
@@ -757,7 +758,6 @@ The recursive transformation function ``recursiveTransform`` will, given a node 
     3. Prepare the transformed back value of the ADD in case the result of the XOR is used outside of the tree (i.e by something else than a XOR, or by a XOR outside the current ``BasicBlock``).
        And replace those uses with the new transformed back value.
 
-.. FIXME: Add code?
 
 Breaking the Patterns
 *********************
@@ -948,7 +948,7 @@ This makes understanding the bytecode **very** laborious ...
     }
 
 Good news it's working as expected!
-You should probably optimize the bytecode and take a look at it, just to see what it looks like.
+You should probably optimize the bytecode and take a look at it, just to see how it looks like.
 But the transformations are hard to recognize!
 
 Performances
@@ -969,7 +969,7 @@ And using a larger base means using larger integer types.
 
 In the previous version, an obfuscated `i32` XOR was most likely to be transformed using a type 'smaller' than `i64`.
 Which meant that all transformation instructions could use the CPU hard coded instructions.
-However, with chained XORs it is likely that the obfuscated types are greater than `i64` and require the use of software implemented mul, mod...
+However, with chained XORs it is likely that the obfuscated types are greater than `i64` and require the use of software implementation of `mul`, `mod` for non-native integer size...
 But even if the complexity of instructions increases, their number is reduced. This double variation probably helps mitigate the slowdown.
 
 To have a better understanding of what is happening we are going to benchmark the following code:
@@ -992,8 +992,6 @@ To have a better understanding of what is happening we are going to benchmark th
 
 We are going to change the number of XOR executed in the loop and study the variations in the number of instruction, compilation time, execution time and obfuscated types.
 
-.. FIXME : explain table
-
 =========  ==============  =========  =========================  =============  ====
 number of  Original code   Obfuscated code
 ---------  --------------  ---------------------------------------------------------
@@ -1005,6 +1003,8 @@ XORs       exec time       exec time  additional number of inst  compile time   
 4          0.14s           +107042%   930                        +400%          i83
 5          0.16s           +106150%   1090                       +500%          i90
 =========  ==============  =========  =========================  =============  ====
+
+Don't put this in your hot paths :-)
 
 
 Divide to Conquer
@@ -1048,7 +1048,7 @@ We will now use the last branch ``propagated_transfo``:
 Core Logic
 **********
 
-To take advantage of the work we have already done, we have extracted a generic "propagated transformation" class.
+To take advantage of the work we have already done, we have extracted a generic 'propagated transformation' class.
 This class will detect eligible variables (to be defined by the specific transformation), build the dependency trees and apply the transformations (to be defined).
 
 The only main change we have to make to the functions we developed for X-OR is to handle transformation turning one ``Value`` into an array of ``Value``.
@@ -1215,8 +1215,8 @@ To combine the two passes you can either apply them one by one with `opt` or app
 After applying the two optimizations, the code becomes too big to paste here.
 But this happens:
 
-    * The XORs are split into several smaller ones, hence generating a forest of independent small XORs trees.
-    * Each XOR tree is *idependently* obfuscated by X-OR. This means that the obfuscated types of each subtree can be different (and they really are in practice)!
+    * The XORs are split into several smaller ones, hence generating a forest of independent small XORs trees (actually DAGs).
+    * Each XOR tree is *independently* obfuscated by X-OR. This means that the obfuscated types of each subtree can be different (and they really are in practice)!
     * And the optimizer will not optimize out the splits!
 
 I'll let you take a look at the result. With the given example LLVM produces ~1300 obfuscated LLVM instructions from the original ~10.
@@ -1249,6 +1249,6 @@ So don't throw out this obfuscation because of those numbers.
 THE END!
 ========
 
-In this post, we've tried to present the different steps of obfuscation pass development, from the conception to the improvements.
+In this post, we tried to present the different steps of obfuscation pass development, from the conception to the improvements.
 There are a few things that could be improved, most notably handling operations other than XORs.
 But we'll leave that to you!
